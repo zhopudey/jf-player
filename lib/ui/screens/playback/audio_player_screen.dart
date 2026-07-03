@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
+import 'package:go_router/go_router.dart';
 import 'package:moonfin_design/moonfin_design.dart';
 import 'package:moonfin_native_video/moonfin_native_video.dart';
 import 'package:playback_core/playback_core.dart';
@@ -27,6 +28,7 @@ import '../../widgets/remote_play_to_session_dialog.dart';
 import '../../widgets/playback/audio_quality_badge.dart';
 import '../../widgets/playback/lyrics_view.dart';
 import '../../../l10n/app_localizations.dart';
+import 'audiobook_player_view.dart';
 
 class AudioPlayerScreen extends StatefulWidget {
   const AudioPlayerScreen({super.key});
@@ -850,13 +852,35 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final item = _resolveCurrentItem();
+    final attachMedia3View =
+        PlatformDetection.useNativeVideoSurface && _activeMedia3Backend != null;
+    final isAudiobookRoute = GoRouterState.of(context).uri.queryParameters['isAudiobook'] == 'true';
+    final isAudiobook = (item != null && item.isAudiobook) || isAudiobookRoute;
+    if (isAudiobook) {
+      if (!attachMedia3View) {
+        return const AudiobookPlayerView();
+      }
+      return const Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned(
+            left: -2,
+            top: -2,
+            width: 1,
+            height: 1,
+            child: IgnorePointer(
+              child: Media3VideoView(fill: Color(0x00000000)),
+            ),
+          ),
+          AudiobookPlayerView(),
+        ],
+      );
+    }
     final localPoster = _offlinePosterPath();
     final artUrl = item != null && !_manager.isOfflinePlayback
         ? _getArtUrl(item)
         : null;
     final useSplitLyricsLayout = _shouldUseSplitLyricsLayout(context);
-    final attachMedia3View =
-        PlatformDetection.useNativeVideoSurface && _activeMedia3Backend != null;
 
     final ImageProvider? ambientImage =
         (localPoster != null && File(localPoster).existsSync())

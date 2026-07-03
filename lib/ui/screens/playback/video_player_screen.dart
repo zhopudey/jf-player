@@ -126,6 +126,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Timer? _hideTimer;
   bool _displayPlaying = false;
   Timer? _displayPlayingDebounce;
+  Timer? _endsAtTicker;
   bool _isSeeking = false;
   double _seekValue = 0;
   Timer? _scrubSeekDebounceTimer;
@@ -244,6 +245,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   double _verticalDragStartY = 0.0;
   double _verticalDragStartValue = 0.0;
   bool _verticalDragIsVolume = false;
+  bool _verticalDragIgnored = false;
   Offset? _doubleTapDownPosition;
   DateTime? _lastSeekTime;
   bool _showSkipForward = false;
@@ -776,6 +778,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _syncMediaQueuingPreference();
     _applySubtitleStyle();
     _scheduleHide();
+    _startEndsAtTicker();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     if (PlatformDetection.isMobile) {
       _forcedLandscape = true;
@@ -941,6 +944,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _cancelTvTemporarySpeedHold();
     _hideTimer?.cancel();
     _displayPlayingDebounce?.cancel();
+    _endsAtTicker?.cancel();
     _scrubSeekDebounceTimer?.cancel();
     _scrubSeekDebounceTimer = null;
     _volumeOverlayTimer?.cancel();
@@ -2478,6 +2482,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     });
   }
 
+  void _startEndsAtTicker() {
+    _endsAtTicker?.cancel();
+    _endsAtTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted ||
+          !_controlsVisible ||
+          _isOsdLocked ||
+          _isCurrentPreroll ||
+          _state.duration <= Duration.zero) {
+        return;
+      }
+      setState(() {});
+    });
+  }
+
   void _scheduleHide() {
     _hideTimer?.cancel();
     final hideDelay = PlatformDetection.useMobileUi
@@ -3951,9 +3969,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     required Duration duration,
   }) {
     if (duration <= Duration.zero) return '';
-    final remaining = duration - position;
-    if (remaining <= Duration.zero) return '';
-    final end = DateTime.now().add(remaining);
+    final remainingMedia = duration - position;
+    if (remainingMedia <= Duration.zero) return '';
+    final speed = _state.playbackSpeed > 0 ? _state.playbackSpeed : 1.0;
+    final remainingWall = Duration(
+      milliseconds: (remainingMedia.inMilliseconds / speed).round(),
+    );
+    if (remainingWall <= Duration.zero) return '';
+    final end = DateTime.now().add(remainingWall);
     final time = formatClockTime(
       end,
       use24Hour: _prefs.get(UserPreferences.use24HourClock),
@@ -5235,8 +5258,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   void _onVerticalDragStart(DragStartDetails details) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    _verticalDragIsVolume = details.localPosition.dx > screenWidth / 2;
     _verticalDragStartY = details.localPosition.dy;
+    // Ignore drags that begin in the top edge strip so a swipe there pulls
+    // down the system notification shade instead of changing brightness or
+    // volume. Falls back to a fixed strip when the status bar is hidden.
+    final topInset = MediaQuery.paddingOf(context).top;
+    final topDeadZone = topInset > 48.0 ? topInset : 48.0;
+    _verticalDragIgnored = _verticalDragStartY < topDeadZone;
+    if (_verticalDragIgnored) return;
+    _verticalDragIsVolume = details.localPosition.dx > screenWidth / 2;
     if (_verticalDragIsVolume) {
       final baseVolume = PlatformDetection.isMobile
           ? _systemVolume
@@ -5252,6 +5282,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
+    if (_verticalDragIgnored) return;
     final screenHeight = MediaQuery.sizeOf(context).height;
     final deltaY = _verticalDragStartY - details.localPosition.dy;
     final deltaValue = deltaY / (screenHeight * 0.7);
@@ -5296,12 +5327,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
+    if (_verticalDragIgnored) return;
     if (_verticalDragIsVolume && PlatformDetection.isMobile) {
       unawaited(_setMobileSystemVolume(_systemVolume, syncFromSystem: true));
     }
   }
 
   void _onVerticalDragCancel() {
+    if (_verticalDragIgnored) return;
     if (_verticalDragIsVolume && PlatformDetection.isMobile) {
       unawaited(_setMobileSystemVolume(_systemVolume, syncFromSystem: true));
     }
@@ -5808,11 +5841,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       _suppressBackNavigation();
       if (result == null || !mounted) return;
       final speed = speedOptions[result];
-      await _runSinglePlayerMutation(
+      final changed = await _runSinglePlayerMutation(
         'speed_$speed',
         () async => _manager.setPlaybackSpeed(speed),
         suppressBackFor: const Duration(seconds: 3),
       );
+      if (changed && mounted) {
+        setState(() {});
+      }
     }());
     _showControls();
   }

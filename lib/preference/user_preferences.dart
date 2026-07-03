@@ -1421,6 +1421,31 @@ class UserPreferences extends ChangeNotifier {
     defaultValue: 0,
   );
 
+  static final audiobookShowRemaining = Preference(
+    key: 'pref_audiobook_show_remaining',
+    defaultValue: false,
+  );
+
+  static final audiobookDefaultSpeed = Preference(
+    key: 'pref_audiobook_default_speed',
+    defaultValue: 1.0,
+  );
+
+  static final audiobookSleepPresetMin = Preference(
+    key: 'pref_audiobook_sleep_preset_min',
+    defaultValue: 15,
+  );
+
+  static final audiobookExtendSleepTimer = Preference(
+    key: 'pref_audiobook_extend_sleep_timer',
+    defaultValue: false,
+  );
+
+  static final audiobookDrawerTab = Preference(
+    key: 'pref_audiobook_drawer_tab',
+    defaultValue: 'chapters',
+  );
+
   static final showDescriptionOnPause = Preference(
     key: 'showDescriptionOnPause',
     defaultValue: false,
@@ -1986,6 +2011,11 @@ class UserPreferences extends ChangeNotifier {
   static final windowX = Preference(key: 'window_x', defaultValue: 0.0);
 
   static final windowY = Preference(key: 'window_y', defaultValue: 0.0);
+
+  static final windowFullscreen = Preference(
+    key: 'window_fullscreen',
+    defaultValue: false,
+  );
 
   static final syncPlayAdvancedCorrectionEnabled = Preference(
     key: 'syncplay_advanced_correction_enabled',

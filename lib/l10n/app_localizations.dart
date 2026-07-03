@@ -4594,6 +4594,12 @@ abstract class AppLocalizations {
   /// **'Speaker'**
   String get settingsAudioRouteSpeaker;
 
+  /// Audio route type wired or USB headphones
+  ///
+  /// In en, this message translates to:
+  /// **'Headphones'**
+  String get settingsAudioRouteHeadphones;
+
   /// Audio route subtitle showing max PCM channels
   ///
   /// In en, this message translates to:
@@ -15075,6 +15081,258 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sources'**
   String get sources;
+
+  /// No description provided for @audiobookChapters.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapters'**
+  String get audiobookChapters;
+
+  /// No description provided for @audiobookBookmarks.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmarks'**
+  String get audiobookBookmarks;
+
+  /// No description provided for @audiobookNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes'**
+  String get audiobookNotes;
+
+  /// No description provided for @audiobookQueue.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue'**
+  String get audiobookQueue;
+
+  /// No description provided for @audiobookTimeline.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeline'**
+  String get audiobookTimeline;
+
+  /// No description provided for @audiobookTimelineEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeline is empty'**
+  String get audiobookTimelineEmpty;
+
+  /// No description provided for @audiobookWholeBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Whole book'**
+  String get audiobookWholeBook;
+
+  /// No description provided for @audiobookWholeBookProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% · {time} left'**
+  String audiobookWholeBookProgress(String percent, String time);
+
+  /// No description provided for @audiobookFocusedTimeline.
+  ///
+  /// In en, this message translates to:
+  /// **'Focused Timeline'**
+  String get audiobookFocusedTimeline;
+
+  /// No description provided for @audiobookExportBookmarks.
+  ///
+  /// In en, this message translates to:
+  /// **'Export Bookmarks'**
+  String get audiobookExportBookmarks;
+
+  /// No description provided for @audiobookExportNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'Export Notes'**
+  String get audiobookExportNotes;
+
+  /// No description provided for @audiobookExportAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Export All'**
+  String get audiobookExportAll;
+
+  /// No description provided for @audiobookExportSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Exported to {path}'**
+  String audiobookExportSuccess(String path);
+
+  /// No description provided for @audiobookExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Export failed: {error}'**
+  String audiobookExportFailed(String error);
+
+  /// No description provided for @audiobookLyrics.
+  ///
+  /// In en, this message translates to:
+  /// **'Lyrics'**
+  String get audiobookLyrics;
+
+  /// No description provided for @audiobookAddBookmark.
+  ///
+  /// In en, this message translates to:
+  /// **'Add bookmark'**
+  String get audiobookAddBookmark;
+
+  /// No description provided for @audiobookAddNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Add note'**
+  String get audiobookAddNote;
+
+  /// No description provided for @audiobookEditNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit note'**
+  String get audiobookEditNote;
+
+  /// No description provided for @audiobookNoteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a note for this moment'**
+  String get audiobookNoteHint;
+
+  /// No description provided for @audiobookSleepTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer'**
+  String get audiobookSleepTimer;
+
+  /// No description provided for @audiobookSleepOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get audiobookSleepOff;
+
+  /// No description provided for @audiobookSleepEndOfChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'End of chapter'**
+  String get audiobookSleepEndOfChapter;
+
+  /// No description provided for @audiobookSleepCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom'**
+  String get audiobookSleepCustom;
+
+  /// No description provided for @audiobookSleepRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'{remaining} left'**
+  String audiobookSleepRemaining(String remaining);
+
+  /// No description provided for @audiobookSleepMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 min} other{{count} min}}'**
+  String audiobookSleepMinutes(int count);
+
+  /// No description provided for @audiobookPlaybackSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback speed'**
+  String get audiobookPlaybackSpeed;
+
+  /// No description provided for @audiobookRemainingTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Remaining'**
+  String get audiobookRemainingTime;
+
+  /// No description provided for @audiobookElapsedTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Elapsed'**
+  String get audiobookElapsedTime;
+
+  /// No description provided for @audiobookSkipBackSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Back {seconds}s'**
+  String audiobookSkipBackSeconds(int seconds);
+
+  /// No description provided for @audiobookSkipForwardSeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'Forward {seconds}s'**
+  String audiobookSkipForwardSeconds(int seconds);
+
+  /// No description provided for @audiobookPreviousChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous chapter'**
+  String get audiobookPreviousChapter;
+
+  /// No description provided for @audiobookNextChapter.
+  ///
+  /// In en, this message translates to:
+  /// **'Next chapter'**
+  String get audiobookNextChapter;
+
+  /// No description provided for @audiobookChapterIndicator.
+  ///
+  /// In en, this message translates to:
+  /// **'Chapter {current} of {total}'**
+  String audiobookChapterIndicator(int current, int total);
+
+  /// No description provided for @audiobookNoChapters.
+  ///
+  /// In en, this message translates to:
+  /// **'No chapters'**
+  String get audiobookNoChapters;
+
+  /// No description provided for @audiobookNoBookmarks.
+  ///
+  /// In en, this message translates to:
+  /// **'No bookmarks yet'**
+  String get audiobookNoBookmarks;
+
+  /// No description provided for @audiobookNoNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'No notes yet'**
+  String get audiobookNoNotes;
+
+  /// No description provided for @audiobookBookmarkAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmark added at {position}'**
+  String audiobookBookmarkAdded(String position);
+
+  /// No description provided for @audiobookSpeedReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset to 1.0x'**
+  String get audiobookSpeedReset;
+
+  /// No description provided for @audiobookSpeedCustomLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'{value}x'**
+  String audiobookSpeedCustomLabel(String value);
+
+  /// No description provided for @audiobookSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get audiobookSave;
+
+  /// No description provided for @audiobookCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get audiobookCancel;
+
+  /// No description provided for @audiobookDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get audiobookDelete;
 
   /// Title for the subtitle preferences settings section
   ///
