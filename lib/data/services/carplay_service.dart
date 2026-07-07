@@ -55,6 +55,8 @@ class CarPlayService {
       case 'getChildren':
         final nodeId =
             (call.arguments as Map?)?['nodeId'] as String? ?? 'root';
+        // No page options: this returns the complete node listing; the Swift
+        // bridge truncates at CPListTemplate.maximumItemCount.
         final items = await _browse.getChildren(nodeId);
         return {'items': items.map(_toBrowseJson).toList()};
       case 'playItem':

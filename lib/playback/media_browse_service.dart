@@ -7,6 +7,8 @@ import 'package:server_core/server_core.dart';
 import '../data/models/aggregated_item.dart';
 import '../data/services/audiobook_resume_service.dart';
 import '../data/services/media_server_client_factory.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/current_app_localizations.dart';
 import 'car_artwork.dart';
 import 'headless_session_bootstrap.dart';
 import 'last_playback_session_store.dart';
@@ -43,9 +45,30 @@ class _CachedChildren {
 /// ```
 class MediaBrowseService {
   static const _pageSize = 100;
+  // Ceiling for a single browse response. MediaBrowserServiceCompat sends
+  // results in one binder parcel and silently drops oversized ones (the host
+  // then spins forever), so every listing stays bounded.
+  static const _listCap = 500;
+  // Bounds session restore and each browse load; the Emby client's own
+  // receiveTimeout is three minutes, far past what a car screen tolerates.
+  static const _browseTimeout = Duration(seconds: 20);
+  // Lean projection for car browse lists: ids/names/types ride the base
+  // response; these cover the track/book leaves and album-art lookups. Image
+  // tags are capped to one Primary per item (servers return every tag by
+  // default), which is most of the payload saving.
+  static const _browseFields =
+      'PrimaryImageAspectRatio,SortName,Type,RunTimeTicks,Artists,AlbumArtist,'
+      'Album,AlbumId,AlbumPrimaryImageTag,ImageTags';
+  static const _browseImageTypes = 'Primary';
   static const _cacheTtl = Duration(minutes: 2);
   static const _kPage = 'android.media.browse.extra.PAGE';
   static const _kPageSize = 'android.media.browse.extra.PAGE_SIZE';
+  // Description extras Android Auto reads for grouped shelves and per-item
+  // style overrides, mirroring androidx.media.utils.MediaConstants.
+  static const _kGroupTitle =
+      'android.media.browse.CONTENT_STYLE_GROUP_TITLE_HINT';
+  static const _kSingleItemStyle =
+      'android.media.browse.CONTENT_STYLE_SINGLE_ITEM_HINT';
 
   final MediaServerClientFactory _clientFactory;
   final HeadlessSessionBootstrap _bootstrap;
@@ -53,6 +76,9 @@ class MediaBrowseService {
   final LastPlaybackSessionStore _lastSessionStore;
 
   final Map<String, _CachedChildren> _cache = {};
+  // Concurrent requests for the same node share one fetch: paging hosts fire
+  // several page subscriptions at once and CarPlay reloads all tabs on connect.
+  final Map<String, Future<List<MediaItem>>> _inflight = {};
 
   MediaBrowseService(
     this._clientFactory,
@@ -61,7 +87,14 @@ class MediaBrowseService {
     this._lastSessionStore,
   );
 
-  void clearCache() => _cache.clear();
+  void clearCache() {
+    _cache.clear();
+    _inflight.clear();
+  }
+
+  // Resolves against the system locale (the car has no widget context); falls
+  // back to English for unsupported locales.
+  AppLocalizations get _l10n => currentAppLocalizations();
 
   Future<MediaServerClient?> _client() async {
     if (_clientFactory.clients.isNotEmpty) {
@@ -81,25 +114,32 @@ class MediaBrowseService {
     String parentMediaId, [
     Map<String, dynamic>? options,
   ]) async {
-    await CarArtwork.instance.ensureReady();
+    // Resolving the artwork provider authority is a platform-channel call that
+    // can wedge in a headless car engine. It is optional (wrap() falls back to
+    // raw urls without it), so never let it block the browse tree.
+    try {
+      await CarArtwork.instance.ensureReady().timeout(const Duration(seconds: 3));
+    } catch (_) {}
+
     if (parentMediaId == AudioService.recentRootId) {
       final recent = await _lastSessionStore.asRecentMediaItems();
       await CarArtwork.instance.persistHosts();
       return recent;
     }
 
-    final cached = _cache[_cacheKey(parentMediaId, options)];
+    final cached = _cache[parentMediaId];
     if (cached != null &&
         DateTime.now().difference(cached.fetchedAt) < _cacheTtl) {
-      return cached.items;
+      return _pageOf(cached.items, options);
     }
 
-    final client = await _client();
-    if (client == null) return [_signInItem];
-
-    List<MediaItem> items;
+    final List<MediaItem> items;
     try {
-      items = await _loadChildren(client, parentMediaId, options);
+      final client = await _client().timeout(_browseTimeout);
+      if (client == null) return [_signInItem];
+      items = await (_inflight[parentMediaId] ??=
+              _loadChildrenOnce(client, parentMediaId))
+          .timeout(_browseTimeout);
     } on DioException catch (e) {
       final status = e.response?.statusCode;
       if (status == 401 || status == 403) return [_signInItem];
@@ -108,26 +148,84 @@ class MediaBrowseService {
       return [_offlineItem];
     }
 
-    _cache[_cacheKey(parentMediaId, options)] = _CachedChildren(items);
+    _cache[parentMediaId] = _CachedChildren(items);
     await CarArtwork.instance.persistHosts();
-    return items;
+    return _pageOf(items, options);
   }
 
-  String _cacheKey(String parent, Map<String, dynamic>? options) {
-    final page = options?[_kPage];
-    return page == null ? parent : '$parent#$page';
+  Future<List<MediaItem>> _loadChildrenOnce(
+    MediaServerClient client,
+    String parentMediaId,
+  ) async {
+    try {
+      return await _loadChildren(client, parentMediaId);
+    } finally {
+      _inflight.remove(parentMediaId);
+    }
   }
+
+  // audio_service overrides the 3-arg onLoadChildren without
+  // RESULT_FLAG_OPTION_NOT_HANDLED, so the framework never slices pages for
+  // us. Paging hosts must receive exactly the requested window; hosts that do
+  // not page (CarPlay, most Android Auto launchers) get the complete list.
+  List<MediaItem> _pageOf(List<MediaItem> items, Map<String, dynamic>? options) {
+    final page = (options?[_kPage] as num?)?.toInt();
+    if (page == null) return items;
+    final pageSize = (options?[_kPageSize] as num?)?.toInt() ?? _pageSize;
+    final start = page * pageSize;
+    if (start >= items.length) return const [];
+    return items.sublist(start, (start + pageSize).clamp(0, items.length));
+  }
+
+  /// One letter-scoped listing call ('#' means everything sorting before
+  /// 'A'). Every library section browses through these, keeping each response
+  /// a single fast request that always fits the binder parcel.
+  Future<List<AggregatedItem>> _letterItems(
+    String serverId,
+    Future<Map<String, dynamic>> Function({
+      String? nameStartsWith,
+      String? nameLessThan,
+      int? limit,
+    }) fetch,
+    String letter,
+  ) async {
+    final response = letter == '#'
+        ? await fetch(nameLessThan: 'A', limit: _listCap)
+        : await fetch(nameStartsWith: letter, limit: _listCap);
+    return _toItems(response, serverId);
+  }
+
+  /// The letter segment of a browse node id ('...|az|B'), if present.
+  String? _letterOf(List<String> parts) {
+    final marker = parts.indexOf('az');
+    return marker >= 0 ? parts.elementAtOrNull(marker + 1) : null;
+  }
+
+  // A-Z folders plus '#' for names sorting before 'A'. [childHints] sets how
+  // each folder's contents render: cover grids for albums and books, rows for
+  // artists. Letter scoping has no nameGreaterThan, so names sorting past 'Z'
+  // (non-Latin scripts without a romanized SortName) are not reachable
+  // through these folders.
+  List<MediaItem> _letterNodes(
+    String parentMediaId,
+    Map<String, dynamic> childHints,
+  ) =>
+      [
+        _browsableNode('$parentMediaId|az|#', '#', extras: childHints),
+        for (var c = 'A'.codeUnitAt(0); c <= 'Z'.codeUnitAt(0); c++)
+          _browsableNode(
+            '$parentMediaId|az|${String.fromCharCode(c)}',
+            String.fromCharCode(c),
+            extras: childHints,
+          ),
+      ];
 
   Future<List<MediaItem>> _loadChildren(
     MediaServerClient client,
     String parentMediaId,
-    Map<String, dynamic>? options,
   ) async {
     final serverId = _serverIdOf(client);
     final parts = parentMediaId.split('|');
-    final page = (options?[_kPage] as num?)?.toInt() ?? 0;
-    final pageSize = (options?[_kPageSize] as num?)?.toInt() ?? _pageSize;
-    final startIndex = page * pageSize;
 
     switch (parts.first) {
       case AudioService.browsableRootId:
@@ -137,49 +235,83 @@ class MediaBrowseService {
           case 'home':
             return _homeChildren(client, serverId);
           case 'music':
-            return _musicChildren(serverId);
+            return _musicChildren(client, serverId);
           case 'books':
-            return _booksChildren(client, serverId, startIndex, pageSize);
+            return _booksChildren(client, serverId);
           case 'playlists':
             return _playlistNodes(client, serverId);
         }
       case 'sec':
         final section = parts.elementAtOrNull(1);
+        final letter = _letterOf(parts);
         switch (section) {
           case 'albums':
-            final response = await client.itemsApi.getItems(
-              includeItemTypes: const ['MusicAlbum'],
-              recursive: true,
-              sortBy: 'SortName',
-              sortOrder: 'Ascending',
-              startIndex: startIndex,
-              limit: pageSize,
+            if (letter == null) {
+              return _letterNodes(parentMediaId, _gridHints);
+            }
+            final albums = await _letterItems(
+              serverId,
+              ({nameStartsWith, nameLessThan, limit}) =>
+                  client.itemsApi.getItems(
+                includeItemTypes: const ['MusicAlbum'],
+                recursive: true,
+                sortBy: 'SortName',
+                sortOrder: 'Ascending',
+                nameStartsWith: nameStartsWith,
+                nameLessThan: nameLessThan,
+                limit: limit,
+                fields: _browseFields,
+                enableImageTypes: _browseImageTypes,
+                imageTypeLimit: 1,
+              ),
+              letter,
             );
-            return _toItems(response, serverId).map(_albumNode).toList();
+            return albums.map(_albumNode).toList();
           case 'artists':
-            final response = await client.itemsApi.getAlbumArtists(
-              sortBy: 'SortName',
-              sortOrder: 'Ascending',
-              startIndex: startIndex,
-              limit: pageSize,
+            if (letter == null) {
+              return _letterNodes(parentMediaId, _listHints);
+            }
+            final artists = await _letterItems(
+              serverId,
+              ({nameStartsWith, nameLessThan, limit}) =>
+                  client.itemsApi.getAlbumArtists(
+                sortBy: 'SortName',
+                sortOrder: 'Ascending',
+                nameStartsWith: nameStartsWith,
+                nameLessThan: nameLessThan,
+                limit: limit,
+                fields: _browseFields,
+              ),
+              letter,
             );
-            return _toItems(response, serverId).map(_artistNode).toList();
+            return artists.map(_artistNode).toList();
           case 'musicplaylists':
             return _playlistNodes(client, serverId);
           case 'booklib':
+            // 'sec|booklib|<serverId>|<viewId>' with an optional '|az|<letter>'.
+            if (letter == null) {
+              return _letterNodes(parentMediaId, _gridHints);
+            }
             final viewId = parts.elementAtOrNull(3);
-            final response = await client.itemsApi.getItems(
-              parentId: viewId,
-              includeItemTypes: const ['AudioBook', 'Audio'],
-              recursive: true,
-              sortBy: 'SortName',
-              sortOrder: 'Ascending',
-              startIndex: startIndex,
-              limit: pageSize,
+            final books = await _letterItems(
+              serverId,
+              ({nameStartsWith, nameLessThan, limit}) =>
+                  client.itemsApi.getItems(
+                parentId: viewId,
+                includeItemTypes: const ['AudioBook', 'Audio'],
+                recursive: true,
+                sortBy: 'SortName',
+                sortOrder: 'Ascending',
+                nameStartsWith: nameStartsWith,
+                nameLessThan: nameLessThan,
+                limit: limit,
+                fields: _browseFields,
+                enableImageTypes: _browseImageTypes,
+                imageTypeLimit: 1,
+              ),
+              letter,
             );
-            return _toItems(response, serverId)
-                .map((i) => _bookLeaf(i, serverId))
-                .toList();
+            return books.map((i) => _bookLeaf(i, serverId)).toList();
         }
       case 'album':
         final albumId = parts.elementAtOrNull(2);
@@ -202,7 +334,10 @@ class MediaBrowseService {
           recursive: true,
           sortBy: 'SortName',
           sortOrder: 'Ascending',
-          limit: pageSize,
+          limit: _listCap,
+          fields: _browseFields,
+          enableImageTypes: _browseImageTypes,
+          imageTypeLimit: 1,
         );
         return _toItems(response, serverId).map(_albumNode).toList();
       case 'playlist':
@@ -222,12 +357,13 @@ class MediaBrowseService {
     try {
       hasBookLibrary = (await _bookViews(client)).isNotEmpty;
     } catch (_) {}
+    final l10n = _l10n;
     return [
-      _browsableNode('tab|home', 'Home', extras: _listHints),
-      _browsableNode('tab|music', 'Music', extras: _listHints),
+      _browsableNode('tab|home', l10n.home, extras: _listHints),
+      _browsableNode('tab|music', l10n.music, extras: _listHints),
       if (hasBookLibrary)
-        _browsableNode('tab|books', 'Audiobooks', extras: _gridHints),
-      _browsableNode('tab|playlists', 'Playlists', extras: _listHints),
+        _browsableNode('tab|books', l10n.audiobooks, extras: _gridHints),
+      _browsableNode('tab|playlists', l10n.playlists, extras: _listHints),
     ];
   }
 
@@ -250,28 +386,54 @@ class MediaBrowseService {
       latestAlbums = _toItems(latestResponse, serverId);
     } catch (_) {}
 
+    final l10n = _l10n;
+    final resumeShelf = _shelf(l10n.continueListening);
+    final recentShelf =
+        _shelf(l10n.recentlyAdded, style: AndroidContentStyle.gridItemHintValue);
     return [
       for (final item in resume)
         item.isAudiobook
-            ? _bookLeaf(item, serverId)
-            : _trackLeaf(item, serverId, '-', '-'),
-      for (final album in latestAlbums) _albumNode(album),
+            ? _bookLeaf(item, serverId, hints: resumeShelf)
+            : _trackLeaf(item, serverId, '-', '-', hints: resumeShelf),
+      for (final album in latestAlbums)
+        _albumNode(album, hints: recentShelf),
     ];
   }
 
-  List<MediaItem> _musicChildren(String serverId) => [
-        _browsableNode('sec|albums|$serverId', 'Albums',
-            extras: _gridHints),
-        _browsableNode('sec|artists|$serverId', 'Artists',
-            extras: _listHints),
-        _browsableNode('sec|musicplaylists|$serverId', 'Playlists',
-            extras: _listHints),
-        MediaItem(
-          id: 'shuffle|$serverId|all',
-          title: 'Shuffle all music',
-          playable: true,
-        ),
-      ];
+  /// Quick play, a fresh-artwork shelf, then the full catalog behind category
+  /// rows: the tab shape the major streaming apps use in the car.
+  Future<List<MediaItem>> _musicChildren(
+    MediaServerClient client,
+    String serverId,
+  ) async {
+    List<AggregatedItem> recentAlbums = const [];
+    try {
+      final response = await client.itemsApi.getLatestItems(
+        includeItemTypes: const ['MusicAlbum'],
+        limit: 12,
+      );
+      recentAlbums = _toItems(response, serverId);
+    } catch (_) {}
+
+    final l10n = _l10n;
+    final browse = {..._listHints, ..._shelf(l10n.browse)};
+    final recentShelf =
+        _shelf(l10n.recentlyAdded, style: AndroidContentStyle.gridItemHintValue);
+    return [
+      MediaItem(
+        id: 'shuffle|$serverId|all',
+        title: l10n.shuffleAllMusic,
+        playable: true,
+        extras: _shelf(l10n.play),
+      ),
+      for (final album in recentAlbums)
+        _albumNode(album, hints: recentShelf),
+      _browsableNode('sec|albums|$serverId', l10n.albums, extras: browse),
+      _browsableNode('sec|artists|$serverId', l10n.artists, extras: browse),
+      _browsableNode('sec|musicplaylists|$serverId', l10n.playlists,
+          extras: browse),
+    ];
+  }
 
   Future<List<Map<String, dynamic>>> _bookViews(
     MediaServerClient client,
@@ -289,30 +451,22 @@ class MediaBrowseService {
   Future<List<MediaItem>> _booksChildren(
     MediaServerClient client,
     String serverId,
-    int startIndex,
-    int pageSize,
   ) async {
     final views = await _bookViews(client);
     if (views.isEmpty) return const [];
     if (views.length == 1) {
-      final response = await client.itemsApi.getItems(
-        parentId: views.first['Id']?.toString(),
-        includeItemTypes: const ['AudioBook', 'Audio'],
-        recursive: true,
-        sortBy: 'SortName',
-        sortOrder: 'Ascending',
-        startIndex: startIndex,
-        limit: pageSize,
+      // A single book library skips the view picker and browses the section
+      // node directly, so it gets the same A-Z letter folders.
+      return _loadChildren(
+        client,
+        'sec|booklib|$serverId|${views.first['Id']}',
       );
-      return _toItems(response, serverId)
-          .map((i) => _bookLeaf(i, serverId))
-          .toList();
     }
     return [
       for (final view in views)
         _browsableNode(
           'sec|booklib|$serverId|${view['Id']}',
-          view['Name'] as String? ?? 'Audiobooks',
+          view['Name'] as String? ?? _l10n.audiobooks,
           extras: _gridHints,
         ),
     ];
@@ -407,13 +561,15 @@ class MediaBrowseService {
       case 'artist':
         final artistId = parts.elementAtOrNull(2);
         if (artistId == null) return null;
+        // Bounded on purpose: this queues straight into PlaybackManager, so a
+        // prolific artist yields a long-but-sane queue instead of thousands.
         final response = await client.itemsApi.getItems(
           artistIds: [artistId],
           includeItemTypes: const ['Audio'],
           recursive: true,
           sortBy: 'SortName',
           sortOrder: 'Ascending',
-          limit: 200,
+          limit: 500,
         );
         final items = _toItems(response, serverId);
         if (items.isEmpty) return null;
@@ -559,7 +715,7 @@ class MediaBrowseService {
         'AudioBook',
       ],
       recursive: true,
-      limit: 25,
+      limit: 100,
     );
     return _toItems(response, serverId);
   }
@@ -606,6 +762,14 @@ class MediaBrowseService {
     ];
   }
 
+  /// Extras that place an item under a titled shelf, the grouped look the
+  /// major streaming apps use in the car, optionally forcing the item's own
+  /// tile style regardless of the surrounding list's default.
+  Map<String, dynamic> _shelf(String title, {int? style}) => {
+        _kGroupTitle: title,
+        _kSingleItemStyle: ?style,
+      };
+
   MediaItem _browsableNode(
     String id,
     String title, {
@@ -620,14 +784,15 @@ class MediaBrowseService {
         extras: extras,
       );
 
-  MediaItem _albumNode(AggregatedItem album) => MediaItem(
+  MediaItem _albumNode(AggregatedItem album, {Map<String, dynamic>? hints}) =>
+      MediaItem(
         id: 'album|${album.serverId}|${album.id}',
         title: album.name,
         artist: album.albumArtist ??
             (album.artists.isNotEmpty ? album.artists.join(', ') : null),
         playable: false,
         artUri: _artUri(album),
-        extras: _listHints,
+        extras: {..._listHints, ...?hints},
       );
 
   MediaItem _artistNode(AggregatedItem artist) => MediaItem(
@@ -642,8 +807,9 @@ class MediaBrowseService {
     AggregatedItem item,
     String serverId,
     String ctxKind,
-    String ctxId,
-  ) =>
+    String ctxId, {
+    Map<String, dynamic>? hints,
+  }) =>
       MediaItem(
         id: 'track|$serverId|${item.id}|$ctxKind|$ctxId',
         title: item.name,
@@ -654,10 +820,15 @@ class MediaBrowseService {
         duration: item.runtime,
         playable: true,
         artUri: _artUri(item),
-        extras: {'serverId': serverId},
+        extras: {'serverId': serverId, ...?hints},
       );
 
-  MediaItem _bookLeaf(AggregatedItem item, String serverId) => MediaItem(
+  MediaItem _bookLeaf(
+    AggregatedItem item,
+    String serverId, {
+    Map<String, dynamic>? hints,
+  }) =>
+      MediaItem(
         id: 'book|$serverId|${item.id}',
         title: item.name,
         artist: item.artists.isNotEmpty
@@ -666,7 +837,7 @@ class MediaBrowseService {
         duration: item.runtime,
         playable: true,
         artUri: _artUri(item),
-        extras: {'serverId': serverId},
+        extras: {'serverId': serverId, ...?hints},
       );
 
   Uri? _artUri(AggregatedItem item) => CarArtwork.instance.wrap(_artUriFor(item));
@@ -698,17 +869,17 @@ class MediaBrowseService {
     return null;
   }
 
-  static const _signInItem = MediaItem(
-    id: 'msg|signin',
-    title: 'Sign in to Moonfin on your phone',
-    playable: false,
-  );
+  MediaItem get _signInItem => MediaItem(
+        id: 'msg|signin',
+        title: _l10n.carSignInPrompt,
+        playable: false,
+      );
 
-  static const _offlineItem = MediaItem(
-    id: 'msg|offline',
-    title: "Can't reach your server",
-    playable: false,
-  );
+  MediaItem get _offlineItem => MediaItem(
+        id: 'msg|offline',
+        title: _l10n.carServerUnreachable,
+        playable: false,
+      );
 
   static const Map<String, dynamic> _listHints = {
     AndroidContentStyle.supportedKey: true,
