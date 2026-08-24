@@ -29,6 +29,7 @@ import '../../../data/viewmodels/item_detail_view_model.dart';
 import '../../../data/services/plugin_sync_service.dart';
 import '../../navigation/route_lifecycle_observer.dart';
 import 'modern/modern_detail_content.dart';
+import '../downloads/download_picker_screen.dart';
 import '../../../data/repositories/seerr_repository.dart';
 import '../../../data/services/seerr/seerr_api_models.dart';
 import '../../../l10n/app_localizations.dart';
@@ -57,7 +58,6 @@ import '../../widgets/focus/focusable_button.dart';
 import '../../widgets/focus/request_initial_focus.dart';
 import '../../widgets/overlay_sheet.dart';
 import '../../widgets/playback/player_loading_overlay.dart';
-import '../../../playback/offline_playback_launcher.dart';
 import '../../../playback/hdr_stream_capability.dart';
 import '../../../playback/known_defects.dart';
 import '../../../syncplay/syncplay_manager.dart';
@@ -5947,23 +5947,18 @@ class DetailActionButtonsState extends State<DetailActionButtons> {
                 )
               : null,
         ),
-      if (_offlineRow != null)
+      // Video/audio no longer get a separate "Play offline" button: Play
+      // resolves to the downloaded file by itself (OfflineFirstStreamResolver).
+      // Books don't go through PlaybackManager, so they keep theirs.
+      if (_offlineRow != null && isBook)
         _DetailActionButton(
-          label: isBook ? l10n.readOffline : l10n.playOffline,
-          icon: isBook ? Icons.menu_book : Icons.offline_pin,
+          label: l10n.readOffline,
+          icon: Icons.menu_book,
           onPressed: () async {
             if (context.mounted) {
-              if (isBook) {
-                await context.push(
-                  Destinations.book(item.id, serverId: item.serverId),
-                );
-              } else {
-                await launchOfflinePlayback(
-                  context,
-                  _offlineRow!,
-                  episodeQueue: _offlineQueue,
-                );
-              }
+              await context.push(
+                Destinations.book(item.id, serverId: item.serverId),
+              );
             }
           },
           isActive: true,
@@ -9255,8 +9250,15 @@ class _DownloadButtonState extends State<_DownloadButton> {
 
   void _showQualityPicker(BuildContext context, DownloadService service) {
     final item = widget.item;
-    final isMulti =
-        item.type == 'Season' || item.type == 'Series' || item.type == 'BoxSet';
+
+    // Seasons and series go through the episode picker first, so the quality
+    // sheet's size estimates describe the actual selection.
+    if (item.type == 'Season' || item.type == 'Series') {
+      _openDownloadPicker(context, service);
+      return;
+    }
+
+    final isMulti = item.type == 'BoxSet';
     final supportsTranscoding =
         item.type == 'Movie' || item.type == 'Episode' || isMulti;
     final estimationItems = item.type == 'BoxSet'
@@ -9268,6 +9270,65 @@ class _DownloadButtonState extends State<_DownloadButton> {
       return;
     }
 
+    _showQualitySheet(
+      context,
+      item: item,
+      isMulti: isMulti,
+      supportsTranscoding: supportsTranscoding,
+      estimationItems: estimationItems,
+      onSelected: (quality) => _startDownload(context, service, quality),
+    );
+  }
+
+  /// Season/series download: pick episodes, then quality, then hand the
+  /// selection to the existing (untouched) download engine.
+  Future<void> _openDownloadPicker(
+    BuildContext context,
+    DownloadService service,
+  ) async {
+    final item = widget.item;
+    final viewModel = widget.viewModel;
+    final isSeries = item.type == 'Series';
+
+    final selected = await Navigator.of(context).push<List<AggregatedItem>>(
+      MaterialPageRoute(
+        builder: (_) => DownloadPickerScreen(
+          title: item.name,
+          imageApi: viewModel.imageApi,
+          groupBySeason: isSeries,
+          seriesId: isSeries ? item.id : item.seriesId,
+          loadEpisodes: () async {
+            if (!isSeries) return viewModel.episodes;
+            await viewModel.loadAllSeriesEpisodes();
+            return viewModel.seriesEpisodes;
+          },
+        ),
+      ),
+    );
+
+    if (selected == null || selected.isEmpty || !context.mounted) return;
+
+    _showQualitySheet(
+      context,
+      item: item,
+      isMulti: true,
+      supportsTranscoding: true,
+      estimationItems: selected,
+      onSelected: (quality) {
+        service.downloadItems(selected, quality: quality);
+        _showDownloadStartedSnack(context, quality);
+      },
+    );
+  }
+
+  void _showQualitySheet(
+    BuildContext context, {
+    required AggregatedItem item,
+    required bool isMulti,
+    required bool supportsTranscoding,
+    required List<AggregatedItem> estimationItems,
+    required void Function(DownloadQuality quality) onSelected,
+  }) {
     final sourceWidth = isMulti
         ? (() {
             int? maxWidth;
@@ -9336,7 +9397,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
                 ),
                 onTap: () {
                   Navigator.pop(context);
-                  _startDownload(context, service, quality);
+                  onSelected(quality);
                 },
               ),
             ),
@@ -9353,6 +9414,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
     DownloadQuality quality,
   ) {
     final item = widget.item;
+    // Season/Series never reach here — they go through _openDownloadPicker.
     switch (item.type) {
       case 'Movie':
       case 'Episode':
@@ -9360,29 +9422,23 @@ class _DownloadButtonState extends State<_DownloadButton> {
       case 'AudioBook':
       case 'Book':
         service.downloadItem(item, quality: quality);
-      case 'Season':
-        final episodes = widget.viewModel.episodes;
-        if (episodes.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context).noEpisodesLoaded),
-            ),
-          );
-          return;
-        }
-        service.downloadItems(episodes, quality: quality);
-      case 'Series':
-        service.downloadSeries(item.id, quality: quality);
       case 'BoxSet':
         service.downloadBoxSet(item.id, quality: quality);
     }
 
+    _showDownloadStartedSnack(context, quality);
+  }
+
+  void _showDownloadStartedSnack(
+    BuildContext context,
+    DownloadQuality quality,
+  ) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           AppLocalizations.of(
             context,
-          ).downloadingItem(item.name, quality.label),
+          ).downloadingItem(widget.item.name, quality.label),
         ),
         duration: const Duration(seconds: 2),
       ),

@@ -17,8 +17,11 @@ import '../../widgets/offline_image.dart';
 import '../../widgets/overlay_sheet.dart';
 import '../../widgets/adaptive/adaptive_dialog.dart';
 import '../../widgets/focus/request_initial_focus.dart';
+import '../../widgets/selection/selectable_episode_list.dart';
+import '../../widgets/selection/selectable_list_controller.dart';
+import '../../widgets/selection/selection_bars.dart';
 
-class SavedSeasonScreen extends ConsumerWidget {
+class SavedSeasonScreen extends ConsumerStatefulWidget {
   final String seasonId;
 
   const SavedSeasonScreen({
@@ -27,14 +30,40 @@ class SavedSeasonScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) =>
+  ConsumerState<SavedSeasonScreen> createState() => _SavedSeasonScreenState();
+}
+
+class _SavedSeasonScreenState extends ConsumerState<SavedSeasonScreen> {
+  final _controller = SelectableListController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onSelectionChanged);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onSelectionChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onSelectionChanged() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) =>
       RequestInitialFocus(child: _buildContent(context, ref));
 
   Widget _buildContent(BuildContext context, WidgetRef ref) {
-    final seasonAsync = ref.watch(downloadedItemProvider(seasonId));
-    final episodesAsync = ref.watch(downloadedSeasonEpisodesProvider(seasonId));
+    final seasonAsync = ref.watch(downloadedItemProvider(widget.seasonId));
+    final episodesAsync = ref.watch(
+      downloadedSeasonEpisodesProvider(widget.seasonId),
+    );
+    final episodes = episodesAsync.valueOrNull ?? const <DownloadedItem>[];
 
-    final seasonName = seasonAsync.valueOrNull?.name ?? AppLocalizations.of(context).season;
+    final seasonName =
+        seasonAsync.valueOrNull?.name ?? AppLocalizations.of(context).season;
 
     return Scaffold(
       backgroundColor: AppColorScheme.background,
@@ -42,7 +71,12 @@ class SavedSeasonScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeader(context, seasonName),
+            _buildHeader(context, seasonName, episodes.isNotEmpty),
+            if (_controller.selectMode && episodes.isNotEmpty)
+              SelectionToolbar(
+                controller: _controller,
+                allIds: episodes.map((e) => e.itemId).toList(),
+              ),
             Expanded(
               child: episodesAsync.when(
                 data: (episodes) => _buildEpisodeList(context, episodes),
@@ -58,10 +92,19 @@ class SavedSeasonScreen extends ConsumerWidget {
           ],
         ),
       ),
+      bottomNavigationBar: _controller.selectMode
+          ? SelectionActionBar(
+              controller: _controller,
+              icon: Icons.delete,
+              label: AppLocalizations.of(context).deleteSelected,
+              destructive: true,
+              onConfirm: () => _deleteSelected(context, episodes),
+            )
+          : null,
     );
   }
 
-  Widget _buildHeader(BuildContext context, String title) {
+  Widget _buildHeader(BuildContext context, String title, bool hasEpisodes) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 12, 20, 8),
       child: Row(
@@ -72,14 +115,27 @@ class SavedSeasonScreen extends ConsumerWidget {
               onPressed: () => context.pop(),
             ),
           const SizedBox(width: 8),
-          Text(
-            title,
-            style: TextStyle(
-              color: AppColorScheme.onSurface,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
+          Expanded(
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: AppColorScheme.onSurface,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
+          if (hasEpisodes)
+            IconButton(
+              icon: Icon(
+                _controller.selectMode ? Icons.close : Icons.checklist,
+                color: AppColorScheme.onSurface,
+              ),
+              onPressed: () => _controller.selectMode
+                  ? _controller.exitSelectMode()
+                  : _controller.enterSelectMode(),
+            ),
         ],
       ),
     );
@@ -95,24 +151,73 @@ class SavedSeasonScreen extends ConsumerWidget {
       );
     }
 
+    if (_controller.selectMode) {
+      return SelectableEpisodeList(
+        controller: _controller,
+        scrollable: true,
+        entries: [
+          for (final episode in episodes) _entry(context, episode),
+        ],
+      );
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       itemCount: episodes.length,
       itemBuilder: (context, index) => _EpisodeRow(
         episode: episodes[index],
         onTap: () => launchOfflinePlayback(context, episodes[index], episodeQueue: episodes),
-        onDelete: () => _deleteEpisode(context, episodes[index]),
+        // Long-press starts a selection with this episode ticked, Findroid
+        // style, instead of the old single-item delete confirm.
+        onLongPress: () =>
+            _controller.enterSelectMode(initialId: episodes[index].itemId),
       ),
     );
   }
 
-  Future<void> _deleteEpisode(BuildContext context, DownloadedItem episode) async {
+  SelectableEpisodeEntry _entry(BuildContext context, DownloadedItem episode) {
     final l10n = AppLocalizations.of(context);
+    final metadata = _parseMetadata(episode.metadataJson);
+    final runtime = metadata['RunTimeTicks'] as int?;
+    final durationMin = runtime != null ? (runtime / 600000000).round() : null;
+    final season = episode.parentIndexNumber;
+    final number = episode.indexNumber;
+
+    return SelectableEpisodeEntry(
+      id: episode.itemId,
+      label: number == null
+          ? ''
+          : (season != null
+                ? l10n.seasonEpisodeLabel(season, number)
+                : l10n.episodeNumber(number)),
+      title: episode.name,
+      subtitle: durationMin != null ? l10n.durationMinutes(durationMin) : null,
+      progress: episode.playbackPositionTicks > 0 && runtime != null && runtime > 0
+          ? episode.playbackPositionTicks / runtime
+          : null,
+      thumbnailBuilder: (context) => OfflineImage(
+        localPath: episode.thumbPath ?? episode.posterPath,
+        width: 112,
+        height: 63,
+      ),
+    );
+  }
+
+  Future<void> _deleteSelected(
+    BuildContext context,
+    List<DownloadedItem> episodes,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final selected = episodes
+        .where((e) => _controller.isSelected(e.itemId))
+        .toList();
+    if (selected.isEmpty) return;
+
     final confirmed = await showFocusRestoringDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog.adaptive(
-        title: Text(l10n.deleteEpisode),
-        content: Text(l10n.removeName(episode.name)),
+        title: Text(l10n.deleteSelected),
+        content: Text(l10n.deleteSelectedCount(selected.length)),
         actions: [
           adaptiveDialogAction(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
           adaptiveDialogAction(
@@ -129,17 +234,31 @@ class SavedSeasonScreen extends ConsumerWidget {
     if (confirmed != true) return;
 
     final downloadService = GetIt.instance<DownloadService>();
-    final item = AggregatedItem.fromOffline(episode);
-    await downloadService.deleteDownloadedFiles(item);
+    await downloadService.deleteDownloadedItems(
+      selected.map(AggregatedItem.fromOffline).toList(),
+    );
+    _controller.exitSelectMode();
+  }
+
+  Map<String, dynamic> _parseMetadata(String json) {
+    try {
+      return jsonDecode(json) as Map<String, dynamic>;
+    } catch (_) {
+      return {};
+    }
   }
 }
 
 class _EpisodeRow extends StatelessWidget {
   final DownloadedItem episode;
   final VoidCallback onTap;
-  final VoidCallback onDelete;
+  final VoidCallback onLongPress;
 
-  const _EpisodeRow({required this.episode, required this.onTap, required this.onDelete});
+  const _EpisodeRow({
+    required this.episode,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +274,7 @@ class _EpisodeRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
         onTap: onTap,
-        onLongPress: onDelete,
+        onLongPress: onLongPress,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

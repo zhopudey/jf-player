@@ -23,6 +23,8 @@ import '../../playback/appletv_mpv_backend.dart';
 import '../../playback/media_kit_player_backend.dart';
 import '../../playback/media3_player_backend.dart';
 import '../../playback/tizen_player_backend.dart';
+import '../../playback/offline_aware_player_service.dart';
+import '../../playback/offline_first_stream_resolver.dart';
 import '../../playback/offline_stream_resolver.dart';
 import '../../playback/playback_profile_diagnostics.dart';
 import '../../playback/sleep_timer_controller.dart';
@@ -632,8 +634,8 @@ void setActiveStreamResolver(MediaServerClient client) {
   }
 
   final (
-    MediaStreamResolver resolver,
-    PlayerService service,
+    MediaStreamResolver serverResolver,
+    PlayerService serverService,
   ) = switch (client.serverType) {
     ServerType.jellyfin => () {
       final p = JellyfinPlugin(client);
@@ -644,6 +646,22 @@ void setActiveStreamResolver(MediaServerClient client) {
       return (p.createStreamResolver(), p.createPlaySessionService());
     }(),
   };
+
+  // Offline-first: a downloaded copy is played instead of streaming it, and
+  // its progress is kept locally as well as reported to the server. Wrapping
+  // here means every playback entry point inherits it.
+  final offlineAvailable =
+      _getIt.isRegistered<OfflineStreamResolver>() &&
+      _getIt.isRegistered<OfflineRepository>();
+  final resolver = offlineAvailable
+      ? OfflineFirstStreamResolver(
+          serverResolver,
+          _getIt<OfflineStreamResolver>(),
+        )
+      : serverResolver;
+  final service = offlineAvailable
+      ? OfflineAwarePlayerService(serverService, _getIt<OfflineRepository>())
+      : serverService;
 
   _getIt.registerSingleton<MediaStreamResolver>(resolver);
   _getIt.registerSingleton<PlayerService>(service);

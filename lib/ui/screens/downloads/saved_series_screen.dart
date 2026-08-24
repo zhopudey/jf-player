@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,9 +7,9 @@ import 'package:go_router/go_router.dart';
 import 'package:moonfin_design/moonfin_design.dart';
 
 import '../../../data/database/offline_database.dart';
+import '../../../data/models/aggregated_item.dart';
 import '../../../data/providers/offline_providers.dart';
-import '../../../data/repositories/offline_repository.dart';
-import '../../../data/services/storage_path_service.dart';
+import '../../../data/services/download_service.dart';
 import '../../../util/platform_detection.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../navigation/destinations.dart';
@@ -18,19 +17,46 @@ import '../../widgets/offline_image.dart';
 import '../../widgets/overlay_sheet.dart';
 import '../../widgets/adaptive/adaptive_dialog.dart';
 import '../../widgets/focus/request_initial_focus.dart';
+import '../../widgets/selection/selectable_episode_list.dart';
+import '../../widgets/selection/selectable_list_controller.dart';
+import '../../widgets/selection/selectable_season_list.dart';
+import '../../widgets/selection/selection_bars.dart';
 
-class SavedSeriesScreen extends ConsumerWidget {
+class SavedSeriesScreen extends ConsumerStatefulWidget {
   final String seriesId;
 
   const SavedSeriesScreen({super.key, required this.seriesId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) =>
+  ConsumerState<SavedSeriesScreen> createState() => _SavedSeriesScreenState();
+}
+
+class _SavedSeriesScreenState extends ConsumerState<SavedSeriesScreen> {
+  final _controller = SelectableListController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onSelectionChanged);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onSelectionChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onSelectionChanged() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) =>
       RequestInitialFocus(child: _buildScreen(context, ref));
 
   Widget _buildScreen(BuildContext context, WidgetRef ref) {
-    final seriesAsync = ref.watch(downloadedItemProvider(seriesId));
-    final episodesAsync = ref.watch(downloadedEpisodesProvider(seriesId));
+    final seriesAsync = ref.watch(downloadedItemProvider(widget.seriesId));
+    final episodesAsync = ref.watch(downloadedEpisodesProvider(widget.seriesId));
+    final episodes = episodesAsync.valueOrNull ?? const <DownloadedItem>[];
 
     return Scaffold(
       backgroundColor: AppColorScheme.background,
@@ -58,6 +84,15 @@ class SavedSeriesScreen extends ConsumerWidget {
           ),
         ),
       ),
+      bottomNavigationBar: _controller.selectMode
+          ? SelectionActionBar(
+              controller: _controller,
+              icon: Icons.delete,
+              label: AppLocalizations.of(context).deleteSelected,
+              destructive: true,
+              onConfirm: () => _deleteSelected(context, episodes),
+            )
+          : null,
     );
   }
 
@@ -71,10 +106,20 @@ class SavedSeriesScreen extends ConsumerWidget {
     final overview = metadata['Overview'] as String? ?? '';
     final year = metadata['ProductionYear']?.toString() ?? '';
     final rating = metadata['OfficialRating'] as String? ?? '';
+    final episodes = episodesAsync.valueOrNull ?? const <DownloadedItem>[];
 
     return CustomScrollView(
       slivers: [
-        SliverToBoxAdapter(child: _buildHeader(context, series, overview, year, rating)),
+        SliverToBoxAdapter(
+          child: _buildHeader(
+            context,
+            series,
+            overview,
+            year,
+            rating,
+            episodes.isNotEmpty,
+          ),
+        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
@@ -88,8 +133,22 @@ class SavedSeriesScreen extends ConsumerWidget {
             ),
           ),
         ),
+        if (_controller.selectMode && episodes.isNotEmpty)
+          SliverToBoxAdapter(
+            child: SelectionToolbar(
+              controller: _controller,
+              allIds: episodes.map((e) => e.itemId).toList(),
+            ),
+          ),
         episodesAsync.when(
-          data: (episodes) => _buildSeasonList(context, ref, episodes),
+          data: (episodes) => _controller.selectMode
+              ? SliverToBoxAdapter(
+                  child: SelectableSeasonList(
+                    seasons: _seasonGroups(context, episodes),
+                    controller: _controller,
+                  ),
+                )
+              : _buildSeasonList(context, ref, episodes),
           loading: () => const SliverToBoxAdapter(
             child: Center(child: CircularProgressIndicator()),
           ),
@@ -112,6 +171,7 @@ class SavedSeriesScreen extends ConsumerWidget {
     String overview,
     String year,
     String rating,
+    bool hasEpisodes,
   ) {
     return Stack(
       children: [
@@ -143,6 +203,23 @@ class SavedSeriesScreen extends ConsumerWidget {
             child: IconButton(
                 icon: Icon(Icons.arrow_back, color: AppColorScheme.onSurface),
               onPressed: () => context.pop(),
+              style: IconButton.styleFrom(
+                backgroundColor: AppColorScheme.scrim.withValues(alpha: 0.45),
+              ),
+            ),
+          ),
+        if (hasEpisodes)
+          Positioned(
+            top: series.backdropPath != null ? 140 : 16,
+            right: 20,
+            child: IconButton(
+              icon: Icon(
+                _controller.selectMode ? Icons.close : Icons.checklist,
+                color: AppColorScheme.onSurface,
+              ),
+              onPressed: () => _controller.selectMode
+                  ? _controller.exitSelectMode()
+                  : _controller.enterSelectMode(),
               style: IconButton.styleFrom(
                 backgroundColor: AppColorScheme.scrim.withValues(alpha: 0.45),
               ),
@@ -208,12 +285,56 @@ class SavedSeriesScreen extends ConsumerWidget {
     );
   }
 
-  SliverList _buildSeasonList(BuildContext context, WidgetRef ref, List<DownloadedItem> episodes) {
+  /// Downloaded episodes grouped into seasons, in season/episode order.
+  Map<int?, List<DownloadedItem>> _groupBySeason(List<DownloadedItem> episodes) {
     final seasons = <int?, List<DownloadedItem>>{};
     for (final ep in episodes) {
       (seasons[ep.parentIndexNumber] ??= []).add(ep);
     }
-    final sortedKeys = seasons.keys.toList()..sort((a, b) => (a ?? 0).compareTo(b ?? 0));
+    return seasons;
+  }
+
+  List<int?> _sortedSeasonKeys(Map<int?, List<DownloadedItem>> seasons) =>
+      seasons.keys.toList()..sort((a, b) => (a ?? 0).compareTo(b ?? 0));
+
+  String _seasonLabel(BuildContext context, int? seasonNumber) =>
+      seasonNumber != null
+      ? AppLocalizations.of(context).seasonNumber(seasonNumber)
+      : AppLocalizations.of(context).specials;
+
+  List<SelectableSeasonGroup> _seasonGroups(
+    BuildContext context,
+    List<DownloadedItem> episodes,
+  ) {
+    final seasons = _groupBySeason(episodes);
+    final l10n = AppLocalizations.of(context);
+    return [
+      for (final key in _sortedSeasonKeys(seasons))
+        SelectableSeasonGroup(
+          id: seasons[key]!.first.seasonId ?? 'season-${key ?? 0}',
+          label: _seasonLabel(context, key),
+          episodes: [
+            for (final ep in seasons[key]!)
+              SelectableEpisodeEntry(
+                id: ep.itemId,
+                label: ep.indexNumber != null
+                    ? l10n.episodeNumber(ep.indexNumber!)
+                    : '',
+                title: ep.name,
+                thumbnailBuilder: (context) => OfflineImage(
+                  localPath: ep.thumbPath ?? ep.posterPath,
+                  width: 112,
+                  height: 63,
+                ),
+              ),
+          ],
+        ),
+    ];
+  }
+
+  SliverList _buildSeasonList(BuildContext context, WidgetRef ref, List<DownloadedItem> episodes) {
+    final seasons = _groupBySeason(episodes);
+    final sortedKeys = _sortedSeasonKeys(seasons);
 
     return SliverList(
       delegate: SliverChildBuilderDelegate(
@@ -221,17 +342,23 @@ class SavedSeriesScreen extends ConsumerWidget {
           final seasonNum = sortedKeys[index];
           final seasonEpisodes = seasons[seasonNum]!;
           final seasonId = seasonEpisodes.first.seasonId;
-          final seasonLabel = seasonNum != null ? AppLocalizations.of(context).seasonNumber(seasonNum) : AppLocalizations.of(context).specials;
+          final seasonLabel = _seasonLabel(context, seasonNum);
 
           return _SeasonSection(
             label: seasonLabel,
             episodeCount: seasonEpisodes.length,
             onTap: seasonId != null
-                ? () => context.push(Destinations.downloadedSeason(seriesId, seasonId))
+                ? () => context.push(Destinations.downloadedSeason(widget.seriesId, seasonId))
                 : null,
-            onLongPress: seasonId != null
-                ? () => _confirmDeleteSeason(context, ref, seasonLabel, seasonId, seasonEpisodes)
-                : null,
+            // Long-press starts a selection with this season ticked instead of
+            // the old single-season delete confirm.
+            onLongPress: () {
+              _controller.enterSelectMode();
+              _controller.setAll(
+                seasonEpisodes.map((e) => e.itemId),
+                true,
+              );
+            },
           );
         },
         childCount: sortedKeys.length,
@@ -247,47 +374,44 @@ class SavedSeriesScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _confirmDeleteSeason(
+  /// Deletes through [DownloadService] rather than touching files and the DB
+  /// here, so the picker and this screen share one deletion path (which also
+  /// prunes the now-empty season/series rows and their images).
+  Future<void> _deleteSelected(
     BuildContext context,
-    WidgetRef ref,
-    String seasonLabel,
-    String seasonId,
     List<DownloadedItem> episodes,
   ) async {
     final l10n = AppLocalizations.of(context);
+    final selected = episodes
+        .where((e) => _controller.isSelected(e.itemId))
+        .toList();
+    if (selected.isEmpty) return;
+
     final confirmed = await showFocusRestoringDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog.adaptive(
-        title: Text(l10n.deleteSeason),
-        content: Text(l10n.deleteAllEpisodesInSeason(seasonLabel)),
+        title: Text(l10n.deleteSelected),
+        content: Text(l10n.deleteSelectedCount(selected.length)),
         actions: [
           adaptiveDialogAction(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
-          TextButton(
+          adaptiveDialogAction(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColorScheme.statusRequested,
+            isDestructive: true,
+            child: Text(
+              l10n.delete,
+              style: TextStyle(color: AppColorScheme.statusRequested),
             ),
-            child: Text(l10n.delete),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
 
-    final repo = GetIt.instance<OfflineRepository>();
-    final storagePath = GetIt.instance<StoragePathService>();
-    final imageDir = await storagePath.getImageCacheDir();
-
-    for (final ep in episodes) {
-      if (ep.localFilePath != null) {
-        final f = File(ep.localFilePath!);
-        if (await f.exists()) await f.delete();
-      }
-      final imgDir = Directory('${imageDir.path}/${ep.itemId}');
-      if (await imgDir.exists()) await imgDir.delete(recursive: true);
-    }
-    await repo.deleteSeasonItems(seasonId);
-    ref.invalidate(downloadedEpisodesProvider(seriesId));
+    final downloadService = GetIt.instance<DownloadService>();
+    await downloadService.deleteDownloadedItems(
+      selected.map(AggregatedItem.fromOffline).toList(),
+    );
+    _controller.exitSelectMode();
   }
 }
 
