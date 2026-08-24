@@ -20,8 +20,8 @@ fresh from this plan rather than recovered.
 Built on **harihara LXC 337 / `10.0.10.37`** (`flutterdev`, Debian 13, Flutter 3.44.1 matching
 `FLUTTER_VERSION` in `.github/workflows/build.yml`), deployed to the OnePlus Pad 2 over wireless
 adb. `flutter analyze` clean on all changed files; `flutter build apk --flavor mobile-beta --debug`
-exit 0; installs and launches without fatals. **Gesture/UI behaviour itself is still pending manual
-confirmation on-device** — building and launching is not the same as testing the interaction.
+exit 0; installs and launches without fatals. **Gesture/UI behaviour confirmed working on-device by
+the operator (2026-08-24)**; both features merged to `main` the same day.
 
 Use the **`mobile-beta`** flavor for dev builds (`applicationId org.moonfin.androidtv.beta`): it
 installs alongside the production app instead of forcing an uninstall, which would wipe the
