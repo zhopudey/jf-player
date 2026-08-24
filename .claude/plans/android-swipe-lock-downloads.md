@@ -7,7 +7,42 @@ Plan verified against current `main` — every file/line reference below (video_
 Progress:
 - **Feature 1 (horizontal swipe-to-seek): implemented and built.** `onHorizontalDragStart/Update/End/Cancel` added to the root `GestureDetector` in `video_player_screen.dart`, mirroring the existing vertical-drag gating pattern. New state: `_hSeekStartX`, `_hSeekStartPosition`, `_hSeekPreviewTarget`, `_isHorizontalSeeking`, `_hSeekIgnored`. Preview-only during drag, commits via `_manager.seekTo(...)` on drag end. New `_buildHorizontalSeekOverlay()` reuses the existing trickplay thumbnail helper. Seekbar guard implemented geometrically: a `GlobalKey` (`_seekbarKey`) attached to the seekbar's `Focus` widget, checked via `RenderBox.localToGlobal`/`Rect.contains` in `_isWithinSeekbarHitBand()` (plan only specified the requirement, not the mechanism — this was the implementation choice made to satisfy it), and only consulted while `_controlsVisible`.
 - **Feature 2 (lock button): implemented and built.** Pref gate dropped from the lock button (always visible on mobile UI), auto-lock-on-idle removed from `_scheduleHide()`, locked overlay reduced to a circular tap-to-unlock `Icons.lock_open` in the **bottom-left** corner, `UserPreferences.osdLockEnabled` and its settings row deleted.
-- Feature 3 (downloads overhaul): not started.
+- **Feature 3 (downloads overhaul): implemented and built (2026-08-24).** Built as planned except
+  where noted under "Deviations from the plan in Feature 3" below. Selection widgets landed in
+  `lib/ui/widgets/selection/`, the picker in `lib/ui/screens/downloads/download_picker_screen.dart`,
+  select-mode + bulk delete in both saved-media screens. `flutter analyze lib` 0 errors, APK built
+  and installed to the Pad; **on-device behaviour not yet confirmed by the operator.**
+- **Offline-first playback (added mid-session at operator request, not in the original plan).**
+  `OfflineFirstStreamResolver` + `OfflineAwarePlayerService` wrap the server resolver/player service
+  in `playback_module.dart:setActiveStreamResolver`, so a downloaded copy plays instead of streaming
+  at *every* entry point (Play, Continue Watching, episode rows, autoplay-next, queue) with no
+  call-site changes, and local progress reaches Jellyfin live when reachable / via the existing
+  `SyncService` on reconnect when not. The separate "Play offline" button is gone for video/audio;
+  books keep theirs. Operator decision: **local always wins, no "stream instead" escape hatch** —
+  he downloads originals, so streaming the same 50-100 GB file to a tablet is never wanted.
+  Known gap: local playback leaves `PlaybackManager._isOfflinePlayback` false, so trickplay and
+  chapter images are still fetched from the server (invisible online, they simply don't load when
+  fully offline).
+
+### Deviations from the plan in Feature 3
+
+1. **The plan's claim that no multi-select pattern exists is wrong.**
+   `storage_management_screen.dart:109-265` already has select-mode + checkbox rows + bulk delete,
+   and the strings `selectAll`, `itemsSelected`, `deleteSelected`, `deleteSelectedCount`,
+   `unwatched` all exist. The new widgets follow that idiom and added **zero** l10n strings, so no
+   generated `app_localizations_*.dart` file was touched.
+2. **Selection happens before the quality sheet**, not after, so the sheet's size estimates
+   describe the actual selection. `_showQualityPicker` was split into `_openDownloadPicker` +
+   a reusable `_showQualitySheet`.
+3. **`SelectableEpisodeList` takes a presentation entry, not an `AggregatedItem`**, because the
+   delete side works with Drift `DownloadedItem` rows and local thumbnails while the picker works
+   with server items and `CachedNetworkImage`.
+4. **Already-downloaded episodes are badged and left unticked** in the picker (queried via
+   `OfflineRepository.getSeriesEpisodes`) — not in the plan, but it is what makes "top up the
+   tablet" a single confirm.
+5. **`saved_series_screen` deletes via `deleteDownloadedItems` over the selected episodes**, not by
+   deleting a Season item — the season rows there are synthesised from grouped episodes, and the
+   Episode delete path already prunes emptied season/series rows and their images.
 
 ### Rewritten from scratch 2026-08-24
 
