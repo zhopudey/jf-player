@@ -110,13 +110,6 @@ class _VideoPlaybackScreen extends StatelessWidget {
                   60000: l10n.settingsSixtySeconds,
                 },
               ),
-              if (PlatformDetection.useMobileUi)
-                SwitchPreferenceTile(
-                  preference: UserPreferences.osdLockEnabled,
-                  title: l10n.osdLockButton,
-                  subtitle: l10n.osdLockButtonDescription,
-                  icon: Icons.lock,
-                ),
             ],
           ),
 

@@ -5,9 +5,38 @@
 Plan verified against current `main` — every file/line reference below (video_player_screen.dart, download_service.dart, aggregated_item.dart, item_detail_view_model.dart, item_detail_screen.dart, user_preferences.dart, video_playback_screen.dart, saved_season_screen.dart, saved_series_screen.dart, playback_manager.dart) matched exactly or within a few lines of drift. No rebasing needed — implementable as written.
 
 Progress:
-- **Feature 1 (horizontal swipe-to-seek): implemented.** `onHorizontalDragStart/Update/End/Cancel` added to the root `GestureDetector` in `video_player_screen.dart`, mirroring the existing vertical-drag gating pattern. New state: `_hSeekStartX`, `_hSeekStartPosition`, `_hSeekPreviewTarget`, `_isHorizontalSeeking`. Preview-only during drag, commits via `_manager.seekTo(...)` on drag end. New `_buildHorizontalSeekOverlay()` reuses the existing trickplay thumbnail helper. Seekbar guard implemented geometrically: a `GlobalKey` (`_seekbarKey`) attached to the seekbar's `Focus` widget, checked via `RenderBox.localToGlobal`/`Rect.contains` in `_isWithinSeekbarHitBand()` (plan only specified the requirement, not the mechanism — this was the implementation choice made to satisfy it). **Not yet verified with `flutter analyze` or a real build/run** — see Errors below; the toolchain in this environment was not reliably available this session.
-- Feature 2 (lock button): not started.
+- **Feature 1 (horizontal swipe-to-seek): implemented and built.** `onHorizontalDragStart/Update/End/Cancel` added to the root `GestureDetector` in `video_player_screen.dart`, mirroring the existing vertical-drag gating pattern. New state: `_hSeekStartX`, `_hSeekStartPosition`, `_hSeekPreviewTarget`, `_isHorizontalSeeking`, `_hSeekIgnored`. Preview-only during drag, commits via `_manager.seekTo(...)` on drag end. New `_buildHorizontalSeekOverlay()` reuses the existing trickplay thumbnail helper. Seekbar guard implemented geometrically: a `GlobalKey` (`_seekbarKey`) attached to the seekbar's `Focus` widget, checked via `RenderBox.localToGlobal`/`Rect.contains` in `_isWithinSeekbarHitBand()` (plan only specified the requirement, not the mechanism — this was the implementation choice made to satisfy it), and only consulted while `_controlsVisible`.
+- **Feature 2 (lock button): implemented and built.** Pref gate dropped from the lock button (always visible on mobile UI), auto-lock-on-idle removed from `_scheduleHide()`, locked overlay reduced to a circular tap-to-unlock `Icons.lock_open` in the **bottom-left** corner, `UserPreferences.osdLockEnabled` and its settings row deleted.
 - Feature 3 (downloads overhaul): not started.
+
+### Rewritten from scratch 2026-08-24
+
+The Feature 1 code described in the previous revision of this file was **never committed** — that
+session wrote it on the Windows laptop and only the plan doc reached `main`. It was reimplemented
+fresh from this plan rather than recovered.
+
+### Verified this session (2026-08-24)
+
+Built on **harihara LXC 337 / `10.0.10.37`** (`flutterdev`, Debian 13, Flutter 3.44.1 matching
+`FLUTTER_VERSION` in `.github/workflows/build.yml`), deployed to the OnePlus Pad 2 over wireless
+adb. `flutter analyze` clean on all changed files; `flutter build apk --flavor mobile-beta --debug`
+exit 0; installs and launches without fatals. **Gesture/UI behaviour itself is still pending manual
+confirmation on-device** — building and launching is not the same as testing the interaction.
+
+Use the **`mobile-beta`** flavor for dev builds (`applicationId org.moonfin.androidtv.beta`): it
+installs alongside the production app instead of forcing an uninstall, which would wipe the
+device's downloaded media. Launcher activity stays `org.moonfin.androidtv.MainActivity` even for
+the beta package.
+
+### Deliberate deviations from this plan
+
+1. **`longPressToUnlock` localization string kept.** The plan called for dropping it; it lives in
+   ~70 *generated* `lib/l10n/app_localizations_*.dart` files under Weblate management, so
+   hand-deleting it would be merge-hostile for negligible gain. Unused string left in place.
+2. **`AnimatedOpacity` added to `_buildLockedOverlay()`.** The plan assumed tapping a locked screen
+   already reveals/hides the pill via `_controlsVisible`; it does not — the original only wrapped it
+   in `IgnorePointer`, which gates *touch*, not visibility, so the pill sat on the video
+   permanently. Opacity gating is what actually delivers the plan's stated "tap-to-reveal" design.
 
 ## Context
 

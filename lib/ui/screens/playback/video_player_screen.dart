@@ -141,6 +141,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   bool _didRestoreSystemUiOnExit = false;
   DateTime? _suppressTvLifecycleExitUntil;
   bool _isOsdLocked = false;
+  // Horizontal swipe-to-seek. Preview-only during the drag; the seek is
+  // committed once on release so we never scrub the backend mid-gesture.
+  final GlobalKey _seekbarKey = GlobalKey(debugLabel: 'video_player_seekbar');
+  double? _hSeekStartX;
+  Duration? _hSeekStartPosition;
+  Duration? _hSeekPreviewTarget;
+  bool _isHorizontalSeeking = false;
+  bool _hSeekIgnored = false;
   String? _remotePlaybackState;
   int _remotePositionTicks = 0;
   double? _remoteVolume;
@@ -2505,10 +2513,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       if (mounted && _state.isPlaying) {
         setState(() {
           _controlsVisible = false;
-          if (PlatformDetection.isMobile &&
-              _prefs.get(UserPreferences.osdLockEnabled)) {
-            _isOsdLocked = true;
-          }
         });
       }
     });
@@ -3365,6 +3369,26 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 : PlatformDetection.useMobileUi && !_isOsdLocked
                 ? _onVerticalDragCancel
                 : null,
+            onHorizontalDragStart: PlatformDetection.isTV
+                ? null
+                : PlatformDetection.useMobileUi && !_isOsdLocked
+                ? _onHorizontalDragStart
+                : null,
+            onHorizontalDragUpdate: PlatformDetection.isTV
+                ? null
+                : PlatformDetection.useMobileUi && !_isOsdLocked
+                ? _onHorizontalDragUpdate
+                : null,
+            onHorizontalDragEnd: PlatformDetection.isTV
+                ? null
+                : PlatformDetection.useMobileUi && !_isOsdLocked
+                ? _onHorizontalDragEnd
+                : null,
+            onHorizontalDragCancel: PlatformDetection.isTV
+                ? null
+                : PlatformDetection.useMobileUi && !_isOsdLocked
+                ? _onHorizontalDragCancel
+                : null,
             onPanDown: PlatformDetection.useDesktopUi
                 ? (_) => _showControls()
                 : null,
@@ -3412,6 +3436,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       _buildBrightnessOverlay(),
                     if (PlatformDetection.useMobileUi)
                       _buildDoubleTapSkipOverlay(),
+                    if (PlatformDetection.useMobileUi)
+                      _buildHorizontalSeekOverlay(),
                     if (_isOsdLocked && !hideOsdForPreroll)
                       _buildLockedOverlay(),
                     if (_skipSegment != null)
@@ -3846,8 +3872,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               ),
             const SizedBox(width: AppSpacing.spaceSm),
             Expanded(child: _buildTitleInfo()),
-            if (PlatformDetection.useMobileUi &&
-                _prefs.get(UserPreferences.osdLockEnabled))
+            if (PlatformDetection.useMobileUi)
               IconButton(
                 onPressed: () {
                   _hideTimer?.cancel();
@@ -4218,6 +4243,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         ),
                       ),
                     Focus(
+                      key: _seekbarKey,
                       focusNode: _tvSeekbarFocus,
                       onKeyEvent: (node, event) {
                         if (!PlatformDetection.isTV ||
@@ -5340,6 +5366,92 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
   }
 
+  /// True when [globalPosition] falls inside the on-screen seekbar, so a drag
+  /// starting there scrubs the Slider directly instead of swipe-seeking.
+  bool _isWithinSeekbarHitBand(Offset globalPosition) {
+    final renderObject = _seekbarKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    // Pad vertically: the Slider's visual bar is thinner than its touch target.
+    final band = Rect.fromLTWH(
+      topLeft.dx,
+      topLeft.dy - 12,
+      renderObject.size.width,
+      renderObject.size.height + 24,
+    );
+    return band.contains(globalPosition);
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    // Only guard against the seekbar while the controls (and thus the
+    // seekbar) are actually on screen.
+    _hSeekIgnored =
+        _controlsVisible && _isWithinSeekbarHitBand(details.globalPosition);
+    if (_hSeekIgnored) return;
+    _hSeekStartX = details.localPosition.dx;
+    _hSeekStartPosition = _activeBackend?.position ?? _state.position;
+    _hSeekPreviewTarget = _hSeekStartPosition;
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (_hSeekIgnored) return;
+    final startX = _hSeekStartX;
+    final startPosition = _hSeekStartPosition;
+    if (startX == null || startPosition == null) return;
+
+    final duration = _state.duration;
+    if (duration <= Duration.zero) return;
+
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    if (screenWidth <= 0) return;
+
+    // Scale sensitivity to content length so a full-width swipe covers a
+    // sensible share of the video, clamped so very short and very long items
+    // both stay controllable.
+    final msPerPixel = (duration.inMilliseconds / screenWidth).clamp(
+      150.0,
+      2000.0,
+    );
+    final deltaX = details.localPosition.dx - startX;
+    final targetMs = (startPosition.inMilliseconds + deltaX * msPerPixel)
+        .round()
+        .clamp(0, duration.inMilliseconds);
+
+    setState(() {
+      _isHorizontalSeeking = true;
+      _hSeekPreviewTarget = Duration(milliseconds: targetMs);
+    });
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    if (_hSeekIgnored) {
+      _resetHorizontalSeek();
+      return;
+    }
+    final target = _hSeekPreviewTarget;
+    final wasSeeking = _isHorizontalSeeking;
+    _resetHorizontalSeek();
+    if (!wasSeeking || target == null) return;
+    _manager.seekTo(target);
+    _showControls();
+  }
+
+  void _onHorizontalDragCancel() {
+    _resetHorizontalSeek();
+  }
+
+  void _resetHorizontalSeek() {
+    _hSeekStartX = null;
+    _hSeekStartPosition = null;
+    _hSeekIgnored = false;
+    if (_isHorizontalSeeking || _hSeekPreviewTarget != null) {
+      setState(() {
+        _isHorizontalSeeking = false;
+        _hSeekPreviewTarget = null;
+      });
+    }
+  }
+
   Widget _buildVolumeOverlay() {
     final displayVolume = _useSystemVolume
         ? _systemVolume
@@ -5458,6 +5570,77 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
   }
 
+  Widget _buildHorizontalSeekOverlay() {
+    final target = _hSeekPreviewTarget;
+    final start = _hSeekStartPosition;
+    if (!_isHorizontalSeeking || target == null || start == null) {
+      return const SizedBox.shrink();
+    }
+    final deltaSeconds =
+        target.inSeconds - start.inSeconds;
+    final sign = deltaSeconds < 0 ? '-' : '+';
+    final deltaLabel =
+        '$sign${_formatDuration(Duration(seconds: deltaSeconds.abs()))}';
+    final tile = _getTrickplayTile(target);
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (tile != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.spaceSm),
+                  child: _buildSeekPreviewThumbnail(
+                    imageUrl: tile.url,
+                    headers: tile.headers,
+                    position: target,
+                    sourceRect: tile.sourceRect,
+                    thumbWidth: tile.thumbWidth,
+                    thumbHeight: tile.thumbHeight,
+                    tileWidth: tile.tileWidth,
+                    tileHeight: tile.tileHeight,
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.72),
+                  borderRadius: AppRadius.circular(40),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _formatDuration(target),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      deltaLabel,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDoubleTapSkipOverlay() {
     if (!_showSkipForward && !_showSkipBackward) return const SizedBox.shrink();
     final isForward = _showSkipForward;
@@ -5509,48 +5692,40 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         behavior: HitTestBehavior.opaque,
         onTap: _showControls,
         child: SafeArea(
-          child: Center(
-            child: IgnorePointer(
-              ignoring: !_controlsVisible,
-              child: GestureDetector(
-                onLongPress: () {
-                  setState(() {
-                    _isOsdLocked = false;
-                    _controlsVisible = true;
-                  });
-                  _scheduleHide();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.spaceLg,
-                    vertical: AppSpacing.spaceMd,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.72),
-                    borderRadius: AppRadius.circular(20),
-                    border: Border.fromBorderSide(
-                      ThemeRegistry.active.borders.cardBorder.copyWith(
-                        color: Colors.white.withValues(alpha: 0.18),
-                      ),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const AdaptiveIcon(
-                        Icons.lock,
-                        color: Colors.white70,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        AppLocalizations.of(context).longPressToUnlock,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 13,
+          child: Align(
+            alignment: Alignment.bottomLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.spaceLg),
+              child: AnimatedOpacity(
+                opacity: _controlsVisible ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: IgnorePointer(
+                  ignoring: !_controlsVisible,
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isOsdLocked = false;
+                        _controlsVisible = true;
+                      });
+                      _scheduleHide();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(AppSpacing.spaceMd),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.72),
+                        shape: BoxShape.circle,
+                        border: Border.fromBorderSide(
+                          ThemeRegistry.active.borders.cardBorder.copyWith(
+                            color: Colors.white.withValues(alpha: 0.18),
+                          ),
                         ),
                       ),
-                    ],
+                      child: const AdaptiveIcon(
+                        Icons.lock_open,
+                        color: Colors.white70,
+                        size: 24,
+                      ),
+                    ),
                   ),
                 ),
               ),
