@@ -368,6 +368,17 @@ class MediaKitPlayerBackend extends PlayerBackend {
     if (platform is NativePlayer) {
       _nativeSetProperty(platform, 'network-timeout', '120');
 
+      // mpv caps read-ahead at cache-secs (default 10s) and stops fetching once
+      // it is met, so pausing never deepens the buffer. Ten seconds is too
+      // shallow for a variable link: a cellular dip drains it, playback stalls,
+      // it refills to the cap, and stalls again. Give network playback a real
+      // cushion instead.
+      _nativeSetProperty(platform, 'cache', 'yes');
+      _nativeSetProperty(platform, 'cache-secs', '120');
+      _nativeSetProperty(platform, 'demuxer-readahead-secs', '120');
+      _nativeSetProperty(platform, 'demuxer-max-bytes', '256MiB');
+      _nativeSetProperty(platform, 'demuxer-max-back-bytes', '64MiB');
+
       final maxChannels = prefs.get(UserPreferences.maxAudioChannels);
       final audioChannelsLayout = (maxChannels == 0 || _passthroughActive(prefs))
           ? (PlatformDetection.isIOS ? 'stereo' : 'auto')
