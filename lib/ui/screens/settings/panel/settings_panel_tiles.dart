@@ -109,6 +109,87 @@ class _EditableStringPreferenceTileState
   }
 }
 
+/// Android: switch downloads between the app-private external directory and the
+/// public `Download/Moonfin` folder (MediaStore), so a file manager or the
+/// gallery can see them. Reads/writes the same [UserPreferences.customDownloadPath]
+/// contract [StoragePathService] understands: the sentinel `'mediastore'` when
+/// on, an empty string when off.
+class _MediaStoreDownloadSwitchTile extends StatefulWidget {
+  const _MediaStoreDownloadSwitchTile();
+
+  @override
+  State<_MediaStoreDownloadSwitchTile> createState() =>
+      _MediaStoreDownloadSwitchTileState();
+}
+
+class _MediaStoreDownloadSwitchTileState
+    extends State<_MediaStoreDownloadSwitchTile> {
+  static const _sentinel = 'mediastore';
+
+  late final PreferenceBinding<String> _binding;
+
+  @override
+  void initState() {
+    super.initState();
+    _binding = PreferenceBinding(
+      GetIt.instance<PreferenceStore>(),
+      UserPreferences.customDownloadPath,
+    );
+  }
+
+  @override
+  void dispose() {
+    _binding.dispose();
+    super.dispose();
+  }
+
+  Future<void> _setEnabled(bool enable) async {
+    if (enable) {
+      final l10n = AppLocalizations.of(context);
+      final confirmed = await showFocusRestoringDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog.adaptive(
+          title: Text(l10n.saveToDownloadsFolderQuestion),
+          content: Text(l10n.saveToDownloadsFolderDescription),
+          actions: [
+            adaptiveDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.cancel),
+            ),
+            adaptiveDialogAction(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.enable),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      _binding.value = _sentinel;
+    } else {
+      _binding.value = '';
+    }
+    GetIt.instance<StoragePathService>().clearCache();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return ValueListenableBuilder<String>(
+      valueListenable: _binding,
+      builder: (_, value, _) {
+        final enabled = value == _sentinel;
+        return _TvSettingsListTile(
+          leading: const Icon(Icons.folder_open),
+          title: Text(l10n.saveToDownloadsFolder),
+          subtitle: Text(l10n.downloadsVisibleToOtherApps),
+          trailing: Switch.adaptive(value: enabled, onChanged: _setEnabled),
+          onTap: () => _setEnabled(!enabled),
+        );
+      },
+    );
+  }
+}
+
 class _DoubleSliderTile extends StatefulWidget {
   final String title;
   final IconData icon;

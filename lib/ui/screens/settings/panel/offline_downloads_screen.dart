@@ -60,35 +60,42 @@ class _OfflineDownloadsScreenState extends State<_OfflineDownloadsScreen> {
                       ? l10n.noLimit
                       : l10n.gbValue((v / 1024).toStringAsFixed(1)),
                 ),
-                _EditableStringPreferenceTile(
-                  preference: UserPreferences.customDownloadPath,
-                  title: l10n.settingsCustomPath,
-                  icon: Icons.folder_open,
-                  hintText: l10n.settingsEnterDownloadFolderPath,
-                  pickPath: () async {
-                    // macOS is sandboxed: pick natively and store a
-                    // security-scoped bookmark so the folder stays writable.
-                    if (PlatformDetection.isMacOS) {
-                      final picked = await MacosDownloadDir.pick();
-                      if (picked == null) return null;
-                      await GetIt.instance<UserPreferences>().set(
-                        UserPreferences.customDownloadPathBookmark,
-                        picked.bookmark,
+                // Android has no usable free-text folder path: a raw path the
+                // app writes to fails the scoped-storage write probe and the
+                // setting is dropped. The public Downloads folder via MediaStore
+                // is the only location a file manager can also see.
+                if (PlatformDetection.isAndroid)
+                  const _MediaStoreDownloadSwitchTile()
+                else
+                  _EditableStringPreferenceTile(
+                    preference: UserPreferences.customDownloadPath,
+                    title: l10n.settingsCustomPath,
+                    icon: Icons.folder_open,
+                    hintText: l10n.settingsEnterDownloadFolderPath,
+                    pickPath: () async {
+                      // macOS is sandboxed: pick natively and store a
+                      // security-scoped bookmark so the folder stays writable.
+                      if (PlatformDetection.isMacOS) {
+                        final picked = await MacosDownloadDir.pick();
+                        if (picked == null) return null;
+                        await GetIt.instance<UserPreferences>().set(
+                          UserPreferences.customDownloadPathBookmark,
+                          picked.bookmark,
+                        );
+                        return picked.path;
+                      }
+                      String? initialDir;
+                      try {
+                        initialDir = (await getDownloadsDirectory())?.path;
+                      } catch (_) {}
+                      return FilePicker.getDirectoryPath(
+                        initialDirectory: initialDir,
                       );
-                      return picked.path;
-                    }
-                    String? initialDir;
-                    try {
-                      initialDir = (await getDownloadsDirectory())?.path;
-                    } catch (_) {}
-                    return FilePicker.getDirectoryPath(
-                      initialDirectory: initialDir,
-                    );
-                  },
-                  onChanged: (_) {
-                    GetIt.instance<StoragePathService>().clearCache();
-                  },
-                ),
+                    },
+                    onChanged: (_) {
+                      GetIt.instance<StoragePathService>().clearCache();
+                    },
+                  ),
                 IntPickerPreferenceTile(
                   preference: UserPreferences.downloadConcurrentCount,
                   title: l10n.settingsConcurrentDownloads,

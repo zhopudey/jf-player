@@ -62,7 +62,11 @@ class StoragePathService {
             _cachedRoot = dir;
             return dir;
           }
-          await prefs.set(UserPreferences.customDownloadPath, '');
+          // The path is set but not writable right now (a removable volume that
+          // is unmounted, or an Android shared-storage path the app cannot touch
+          // without MediaStore). Fall back to the default root for this run but
+          // KEEP the preference: silently clearing it turns a transient
+          // condition into a permanent loss of the user's chosen location.
         }
       }
     }

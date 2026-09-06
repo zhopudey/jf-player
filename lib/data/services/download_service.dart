@@ -58,7 +58,7 @@ Future<void> _downloadIsolateMain(Map<String, Object?> args) async {
   cancelPort.listen((_) => cancelled = true);
 
   HttpClient? client;
-  RandomAccessFile? raf;
+  IOSink? sink;
   try {
     client = HttpClient();
     client.badCertificateCallback = (_, _, _) => true;
@@ -90,19 +90,28 @@ Future<void> _downloadIsolateMain(Map<String, Object?> args) async {
       'ct': contentType,
     });
 
-    raf = await File(savePath).open(mode: FileMode.write);
+    sink = File(savePath).openWrite();
     var received = 0;
-    const flushAt = 32 * 1024 * 1024;
-    final buf = BytesBuilder(copy: false);
+    var lastFlushedAt = 0;
+    const flushInterval = 8 * 1024 * 1024;
     var lastPct = -1;
     var lastReportedBytes = 0;
     const bytesReportInterval = 1024 * 1024; // 1 MB for chunked streams
 
     await for (final chunk in response) {
       if (cancelled) break;
-      buf.add(chunk);
+      // Write straight through to the file sink. dart:io batches these writes and
+      // does its own buffering, so there is no big user-space memcpy per flush —
+      // the old BytesBuilder path copied every byte into a 32 MB buffer before
+      // writing and pegged one core at ~7 MB/s.
+      sink.add(chunk);
       received += chunk.length;
-      if (buf.length >= flushAt) await raf.writeFrom(buf.takeBytes());
+      // Periodic flush = a backpressure checkpoint so a fast link cannot outrun
+      // the disk and grow the sink's buffer without bound.
+      if (received - lastFlushedAt >= flushInterval) {
+        lastFlushedAt = received;
+        await sink.flush();
+      }
 
       if (contentLength > 0) {
         final pct = received * 100 ~/ contentLength;
@@ -124,15 +133,15 @@ Future<void> _downloadIsolateMain(Map<String, Object?> args) async {
       }
     }
 
-    if (buf.length > 0) await raf.writeFrom(buf.takeBytes());
-    await raf.close();
-    raf = null;
+    await sink.flush();
+    await sink.close();
+    sink = null;
     client.close();
     client = null;
     cancelPort.close();
     sendPort.send(<String, Object?>{'t': cancelled ? 'c' : 'd', 'r': received});
   } catch (e) {
-    await raf?.close().catchError((_) {});
+    await sink?.close().catchError((_) {});
     client?.close(force: true);
     cancelPort.close();
     sendPort.send(<String, Object?>{'t': 'e', 'msg': e.toString()});
