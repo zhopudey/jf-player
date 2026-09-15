@@ -226,6 +226,11 @@ class MainActivity : AudioServiceActivity() {
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
+            NativeDownloader.CHANNEL,
+        ).setMethodCallHandler(NativeDownloader(this))
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
             PLATFORM_CHANNEL,
         ).setMethodCallHandler { call, result ->
             when (call.method) {

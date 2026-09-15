@@ -24,6 +24,7 @@ import '../repositories/offline_repository.dart';
 import 'book_reader_service.dart';
 import 'download_notification_service.dart';
 import 'media_store_service.dart';
+import 'native_downloader.dart';
 import 'storage_path_service.dart';
 import 'web_download_helper.dart';
 
@@ -55,7 +56,13 @@ Future<void> _downloadIsolateMain(Map<String, Object?> args) async {
   sendPort.send(<String, Object?>{'t': 'r', 'cp': cancelPort.sendPort});
 
   var cancelled = false;
-  cancelPort.listen((_) => cancelled = true);
+  StreamSubscription<List<int>>? bodySub;
+  Completer<void>? bodyDone;
+  cancelPort.listen((_) {
+    cancelled = true;
+    bodySub?.cancel();
+    if (bodyDone != null && !bodyDone.isCompleted) bodyDone.complete();
+  });
 
   HttpClient? client;
   IOSink? sink;
@@ -91,47 +98,68 @@ Future<void> _downloadIsolateMain(Map<String, Object?> args) async {
     });
 
     sink = File(savePath).openWrite();
+    final fileSink = sink;
     var received = 0;
     var lastFlushedAt = 0;
-    const flushInterval = 8 * 1024 * 1024;
+    // Drain checkpoint, not a per-chunk stall. Large because the only job here
+    // is to stop a fast link outrunning the disk without bound.
+    const flushInterval = 32 * 1024 * 1024;
     var lastPct = -1;
     var lastReportedBytes = 0;
     const bytesReportInterval = 1024 * 1024; // 1 MB for chunked streams
 
-    await for (final chunk in response) {
-      if (cancelled) break;
-      // Write straight through to the file sink. dart:io batches these writes and
-      // does its own buffering, so there is no big user-space memcpy per flush —
-      // the old BytesBuilder path copied every byte into a 32 MB buffer before
-      // writing and pegged one core at ~7 MB/s.
-      sink.add(chunk);
-      received += chunk.length;
-      // Periodic flush = a backpressure checkpoint so a fast link cannot outrun
-      // the disk and grow the sink's buffer without bound.
-      if (received - lastFlushedAt >= flushInterval) {
-        lastFlushedAt = received;
-        await sink.flush();
-      }
+    // NOTE: do NOT read this body with `await for`. That pauses the socket
+    // subscription on every single chunk while the loop body runs, which
+    // collapses TCP read-ahead and the receive window — measured 9 MB/s on a
+    // link that `curl` drove at 45 MB/s from the same device. A plain listen()
+    // keeps the socket draining continuously; backpressure is applied instead
+    // by pausing on the flush future at each checkpoint.
+    final done = Completer<void>();
+    bodyDone = done;
+    late final StreamSubscription<List<int>> sub;
+    sub = response.listen(
+      (chunk) {
+        if (cancelled) return;
+        fileSink.add(chunk);
+        received += chunk.length;
 
-      if (contentLength > 0) {
-        final pct = received * 100 ~/ contentLength;
-        if (pct != lastPct) {
-          lastPct = pct;
+        if (received - lastFlushedAt >= flushInterval) {
+          lastFlushedAt = received;
+          // pause(future) resumes automatically when the sink has drained, so
+          // the socket only stalls while the disk is genuinely behind.
+          sub.pause(fileSink.flush());
+        }
+
+        if (contentLength > 0) {
+          final pct = received * 100 ~/ contentLength;
+          if (pct != lastPct) {
+            lastPct = pct;
+            sendPort.send(<String, Object?>{
+              't': 'p',
+              'r': received,
+              'l': contentLength,
+            });
+          }
+        } else if (received - lastReportedBytes >= bytesReportInterval) {
+          lastReportedBytes = received;
           sendPort.send(<String, Object?>{
             't': 'p',
             'r': received,
             'l': contentLength,
           });
         }
-      } else if (received - lastReportedBytes >= bytesReportInterval) {
-        lastReportedBytes = received;
-        sendPort.send(<String, Object?>{
-          't': 'p',
-          'r': received,
-          'l': contentLength,
-        });
-      }
-    }
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+      onError: (Object e, StackTrace st) {
+        if (!done.isCompleted) done.completeError(e, st);
+      },
+      cancelOnError: true,
+    );
+    bodySub = sub;
+
+    await done.future;
 
     await sink.flush();
     await sink.close();
@@ -165,6 +193,11 @@ class DownloadService extends ChangeNotifier {
   final Map<String, double> _lastNotifiedProgress = {};
   final Map<String, double> _lastCallbackProgress = {};
   bool _cancelAllRequested = false;
+
+  /// How many items download at once. Each lane pegs about one core inside
+  /// dart:io's TLS path, so this trades cores for throughput; 4 leaves plenty
+  /// of headroom on an 8-core tablet.
+  static const int _maxConcurrentDownloads = 4;
 
   int _totalQueued = 0;
   int _completedCount = 0;
@@ -604,6 +637,80 @@ class DownloadService extends ChangeNotifier {
     );
   }
 
+  /// Downloads [url] to [savePath] via Android's DownloadManager, polling it
+  /// for progress so callers see the same contract as the isolate path.
+  Future<Response> _nativeDownloadToFile(
+    String url,
+    String savePath, {
+    required Options options,
+    required CancelToken cancelToken,
+    required void Function(int, int) onReceiveProgress,
+  }) async {
+    final headers = <String, String>{};
+    (options.headers ?? const <String, dynamic>{}).forEach((k, v) {
+      if (v != null) headers[k.toString()] = v.toString();
+    });
+
+    final downloadId = await NativeDownloader.enqueue(
+      url: url,
+      savePath: savePath,
+      headers: headers,
+      title: p.basename(savePath),
+    );
+
+    StreamSubscription<void>? cancelSub;
+    cancelSub = cancelToken.whenCancel.asStream().listen((_) {
+      NativeDownloader.cancel(downloadId);
+    });
+
+    try {
+      var total = -1;
+      while (true) {
+        final status = await NativeDownloader.status(downloadId);
+        if (status.totalBytes > 0) total = status.totalBytes;
+        if (status.bytesSoFar > 0) {
+          onReceiveProgress(status.bytesSoFar, total);
+        }
+
+        if (status.isDone) {
+          onReceiveProgress(total > 0 ? total : status.bytesSoFar, total);
+          final responseHeaders = Headers();
+          if (total > 0) {
+            responseHeaders.set('content-length', total.toString());
+          }
+          return Response(
+            requestOptions: RequestOptions(path: url, method: 'GET'),
+            statusCode: 200,
+            headers: responseHeaders,
+          );
+        }
+
+        if (status.isFailed || status.isGone) {
+          throw DioException(
+            type: DioExceptionType.unknown,
+            requestOptions: RequestOptions(path: url),
+            message: status.isGone
+                ? 'DownloadManager entry disappeared'
+                : 'DownloadManager failed (reason ${status.reason})',
+          );
+        }
+
+        if (cancelToken.isCancelled) {
+          await NativeDownloader.cancel(downloadId);
+          throw cancelToken.cancelError ??
+              DioException(
+                type: DioExceptionType.cancel,
+                requestOptions: RequestOptions(path: url),
+              );
+        }
+
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    } finally {
+      await cancelSub.cancel();
+    }
+  }
+
   /// Downloads [url] to [savePath] using a dedicated Dart Isolate.
   Future<Response> _bufferedDownloadToFile(
     String url,
@@ -612,6 +719,18 @@ class DownloadService extends ChangeNotifier {
     required CancelToken cancelToken,
     required void Function(int, int) onReceiveProgress,
   }) async {
+    // Android hands this to the platform downloader: dart:io tops out around
+    // 8 MB/s per connection with a core pegged, against ~45 MB/s natively.
+    if (NativeDownloader.isSupported) {
+      return _nativeDownloadToFile(
+        url,
+        savePath,
+        options: options,
+        cancelToken: cancelToken,
+        onReceiveProgress: onReceiveProgress,
+      );
+    }
+
     final fromIsolate = ReceivePort();
 
     await Isolate.spawn<Map<String, Object?>>(_downloadIsolateMain, {
@@ -1576,12 +1695,29 @@ class DownloadService extends ChangeNotifier {
     _completedCount = 0;
     notifyListeners();
 
-    for (final item in items) {
-      if (_cancelAllRequested) break;
-      try {
-        await downloadItem(item, quality: quality);
-      } catch (_) {}
+    // Run several downloads at once. Each download already gets its own isolate,
+    // and the measured ~8 MB/s ceiling is per-connection (one core pegged inside
+    // dart:io), not a device or link limit — the same tablet sustained ~107 MB/s
+    // aggregate when a native client ran downloads in parallel. Lanes are what
+    // turn that per-stream ceiling into usable throughput.
+    var nextIndex = 0;
+    Future<void> lane() async {
+      while (true) {
+        if (_cancelAllRequested) return;
+        // Dart is single-threaded per isolate, so this claim is atomic: no
+        // await sits between the read and the increment.
+        final index = nextIndex++;
+        if (index >= items.length) return;
+        try {
+          await downloadItem(items[index], quality: quality);
+        } catch (_) {}
+      }
     }
+
+    final laneCount = items.length < _maxConcurrentDownloads
+        ? items.length
+        : _maxConcurrentDownloads;
+    await Future.wait(List.generate(laneCount, (_) => lane()));
 
     _totalQueued = 0;
     _completedCount = 0;
