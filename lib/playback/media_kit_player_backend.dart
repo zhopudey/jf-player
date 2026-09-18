@@ -358,9 +358,11 @@ class MediaKitPlayerBackend extends PlayerBackend {
       configuration: PlayerConfiguration(
         libass: _useLibass,
         libassAndroidFont: PlatformDetection.isAndroid
-            ? 'assets/fonts/NotoSans-Regular.ttf'
+            ? 'assets/fonts/NotoSansCJK-Regular.otf'
             : null,
-        libassAndroidFontName: PlatformDetection.isAndroid ? 'Noto Sans' : null,
+        libassAndroidFontName: PlatformDetection.isAndroid
+            ? 'Noto Sans CJK SC'
+            : null,
       ),
     );
     unawaited(player.setPlaylistMode(PlaylistMode.none));
@@ -1337,17 +1339,12 @@ class MediaKitPlayerBackend extends PlayerBackend {
 
       await _nativeSetProperty(native, 'secondary-sid', 'no');
 
-      final useNativeRendering = !_useLibass ||
-          isBitmapSubtitle ||
-          shouldRenderSubtitleNatively(subtitleCodec);
-
-      if (useNativeRendering) {
-        await _nativeSetProperty(native, 'sub-visibility', 'yes');
-        await _nativeSetProperty(native, 'sub-ass', 'yes');
-        await _applyAssOverrideMode();
-      } else {
-        await _nativeSetProperty(native, 'sub-visibility', 'no');
-      }
+      // Moonfin never shows a Flutter subtitle overlay (media_kit disables its
+      // SubtitleView when libass is on, and it stays hidden otherwise), so mpv
+      // has to draw every subtitle including plain text like SRT and VTT.
+      await _nativeSetProperty(native, 'sub-visibility', 'yes');
+      await _nativeSetProperty(native, 'sub-ass', 'yes');
+      await _applyAssOverrideMode();
     } catch (_) {}
   }
 
