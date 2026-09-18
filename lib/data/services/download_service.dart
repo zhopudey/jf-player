@@ -1348,6 +1348,10 @@ class DownloadService extends ChangeNotifier {
       }
     }
     if (isDownloading(item.id)) return;
+    // Already fully downloaded? Skip it — re-tapping "download" on a series or
+    // episode should only fetch what's missing, never re-download a completed
+    // file (the save path is deterministic, so it would just overwrite).
+    if (await _offlineRepo.isAvailableOffline(item.id)) return;
     if (_cancelAllRequested) {
       if (_canClearCancelAllGate()) {
         _cancelAllRequested = false;
@@ -1691,7 +1695,14 @@ class DownloadService extends ChangeNotifier {
     DownloadQuality quality = DownloadQuality.original,
   }) async {
     _cancelAllRequested = false;
-    _totalQueued = items.length;
+    // Re-tapping "download" on a series/season should only queue the episodes
+    // that are not already on disk, so the progress total stays honest.
+    final pending = <AggregatedItem>[];
+    for (final item in items) {
+      if (await _offlineRepo.isAvailableOffline(item.id)) continue;
+      pending.add(item);
+    }
+    _totalQueued = pending.length;
     _completedCount = 0;
     notifyListeners();
 
@@ -1707,15 +1718,15 @@ class DownloadService extends ChangeNotifier {
         // Dart is single-threaded per isolate, so this claim is atomic: no
         // await sits between the read and the increment.
         final index = nextIndex++;
-        if (index >= items.length) return;
+        if (index >= pending.length) return;
         try {
-          await downloadItem(items[index], quality: quality);
+          await downloadItem(pending[index], quality: quality);
         } catch (_) {}
       }
     }
 
-    final laneCount = items.length < _maxConcurrentDownloads
-        ? items.length
+    final laneCount = pending.length < _maxConcurrentDownloads
+        ? pending.length
         : _maxConcurrentDownloads;
     await Future.wait(List.generate(laneCount, (_) => lane()));
 

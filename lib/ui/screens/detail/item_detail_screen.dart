@@ -12033,11 +12033,34 @@ class DetailEpisodeCard extends StatefulWidget {
 class DetailEpisodeCardState extends State<DetailEpisodeCard>
     with FocusStateMixin {
   final _selectKeyHandler = LongPressSelectKeyHandler();
+  bool _downloaded = false;
+  DownloadService? _downloadService;
+
+  @override
+  void initState() {
+    super.initState();
+    if (GetIt.instance.isRegistered<DownloadService>()) {
+      _downloadService = GetIt.instance<DownloadService>();
+      _downloadService!.addListener(_onDownloadChanged);
+    }
+    _checkDownloaded();
+  }
 
   @override
   void dispose() {
+    _downloadService?.removeListener(_onDownloadChanged);
     _selectKeyHandler.dispose();
     super.dispose();
+  }
+
+  void _onDownloadChanged() => _checkDownloaded();
+
+  Future<void> _checkDownloaded() async {
+    final repo = GetIt.instance<OfflineRepository>();
+    final available = await repo.isAvailableOffline(widget.episode.id);
+    if (mounted && available != _downloaded) {
+      setState(() => _downloaded = available);
+    }
   }
 
   void _handleLongPress() {
@@ -12180,6 +12203,25 @@ class DetailEpisodeCardState extends State<DetailEpisodeCard>
                                   padding: EdgeInsets.all(3),
                                   child: AdaptiveIcon(
                                     Icons.check,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (_downloaded)
+                            Positioned(
+                              top: 6,
+                              left: 6,
+                              child: DecoratedBox(
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF4CAF50),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(3),
+                                  child: AdaptiveIcon(
+                                    Icons.download_done,
                                     color: Colors.white,
                                     size: 14,
                                   ),
