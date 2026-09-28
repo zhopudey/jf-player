@@ -572,10 +572,10 @@ class PlaybackManager implements AudioOwnable {
     if (!completed) return;
 
     final completedItem = queueService.currentItem;
-    if (completedItem != null) {
-      final itemId = MediaStreamResolver.extractItemId(completedItem);
-      onSubtitleTrackChanged?.call(itemId, null);
-      onAudioTrackChanged?.call(itemId, null);
+    final completedItemId = _serverItemIdOrNull(completedItem);
+    if (completedItemId != null) {
+      onSubtitleTrackChanged?.call(completedItemId, null);
+      onAudioTrackChanged?.call(completedItemId, null);
     }
 
     if (_waitingForMedia ||
@@ -1633,9 +1633,8 @@ class PlaybackManager implements AudioOwnable {
     _audioStreamIndex = streamIndex;
     _audioSelectionExplicit = true;
 
-    final currentItem = queueService.currentItem;
-    if (currentItem != null) {
-      final itemId = MediaStreamResolver.extractItemId(currentItem);
+    final itemId = _serverItemIdOrNull(queueService.currentItem);
+    if (itemId != null) {
       onAudioTrackChanged?.call(itemId, streamIndex >= 0 ? streamIndex : null);
     }
 
@@ -1815,9 +1814,8 @@ class PlaybackManager implements AudioOwnable {
     final isBitmap = _isSubtitleBitmap(streamIndex);
     _subtitleStreamIndex = streamIndex;
 
-    final currentItem = queueService.currentItem;
-    if (currentItem != null) {
-      final itemId = MediaStreamResolver.extractItemId(currentItem);
+    final itemId = _serverItemIdOrNull(queueService.currentItem);
+    if (itemId != null) {
       onSubtitleTrackChanged?.call(itemId, streamIndex >= 0 ? streamIndex : null);
     }
 
@@ -1913,8 +1911,15 @@ class PlaybackManager implements AudioOwnable {
       final idx = externalSubs.indexWhere((s) => s.streamIndex == streamIndex);
       if (idx >= 0) {
         final selectedExternal = externalSubs[idx];
+        // The player lists text tracks with the embedded ones first and the
+        // external sidecars after them, so an external subtitle's position
+        // within externalSubtitles alone addresses an embedded track instead
+        // (a file whose only flagged track is a foreign forced one then shows
+        // no cues at all).
+        final playerTrackIndex =
+            _mpvTrackIdForStream(streamIndex, 'Subtitle') ?? (idx + 1);
         await _backend?.setSubtitleTrack(
-          idx + 1,
+          playerTrackIndex,
           subtitleCodec: selectedExternal.codec,
           isExternalSubtitle: true,
           externalSubtitleUrl: _ensureSubtitleApiKey(selectedExternal.deliveryUrl),
@@ -2212,6 +2217,39 @@ class PlaybackManager implements AudioOwnable {
       return typeStreams[positional]['Index'] as int?;
     }
     return null;
+  }
+
+  /// The server item id of a queue entry, or null for an offline entry: those
+  /// are queued as the downloaded file's path and carry no item to remember a
+  /// track choice against.
+  String? _serverItemIdOrNull(dynamic item) {
+    if (item == null || item is String) return null;
+    return MediaStreamResolver.extractItemId(item);
+  }
+
+  /// Applies the audio and subtitle tracks the server picked for this user
+  /// when the item was downloaded. Offline playback has no PlaybackInfo call to
+  /// choose them, so without this the player falls back to its own pick (the
+  /// first audio track, and no sidecar subtitle). Call it once the sidecar
+  /// subtitles have been added, so their track ids exist.
+  Future<void> applyOfflineDefaultTrackSelections() async {
+    if (!_isOfflinePlayback) return;
+    final url = queueService.currentItem;
+    if (url is! String) return;
+    final sources = _offlineMetadataByUrl[url]?['MediaSources'] as List?;
+    final source = sources?.whereType<Map<String, dynamic>>().firstOrNull;
+    if (source == null) return;
+    final defaultAudio = source['DefaultAudioStreamIndex'];
+    if (_audioStreamIndex == null && defaultAudio is int && defaultAudio >= 0) {
+      _audioStreamIndex = defaultAudio;
+    }
+    final defaultSubtitle = source['DefaultSubtitleStreamIndex'];
+    if (_subtitleStreamIndex == null &&
+        defaultSubtitle is int &&
+        defaultSubtitle >= 0) {
+      _subtitleStreamIndex = defaultSubtitle;
+    }
+    _waitAndApplyTrackSelections(_playbackSessionToken);
   }
 
   Future<void> playOffline(

@@ -121,6 +121,7 @@ Future<void> launchOfflinePlayback(
             codec: sub.codec,
           );
         }
+        await manager.applyOfflineDefaultTrackSelections();
         await tracker.startTracking(
           itemId: nextResult.itemId,
           duration: nextResult.duration,
@@ -138,6 +139,7 @@ Future<void> launchOfflinePlayback(
       codec: sub.codec,
     );
   }
+  await manager.applyOfflineDefaultTrackSelections();
   await tracker.startTracking(
     itemId: result.itemId,
     duration: result.duration,
