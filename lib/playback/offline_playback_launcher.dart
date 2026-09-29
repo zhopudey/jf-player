@@ -1,153 +1,107 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:playback_core/playback_core.dart';
+import 'package:server_core/server_core.dart';
 
 import '../data/database/offline_database.dart';
 import '../data/repositories/offline_repository.dart';
-import '../data/services/offline_playback_tracker.dart';
+import '../data/models/aggregated_item.dart';
+import '../data/services/media_server_client_factory.dart';
 import '../data/services/storage_path_service.dart';
-import '../l10n/app_localizations.dart';
 import '../ui/navigation/destinations.dart';
-import 'offline_stream_resolver.dart';
 
+/// Plays from the downloads list through the normal queue.
+///
+/// Downloaded rows become ordinary queue items; [OfflineFirstStreamResolver]
+/// swaps in the local file for each one, so next/previous/auto-next behave
+/// exactly as when streaming. Episodes without a finished download are
+/// dropped from the queue so next never falls through to the network.
 Future<void> launchOfflinePlayback(
   BuildContext context,
   DownloadedItem item, {
   List<DownloadedItem>? episodeQueue,
 }) async {
-  final resolver = GetIt.instance<OfflineStreamResolver>();
-  final result = await resolver.resolve(item.itemId);
-  if (result == null) {
-    if (context.mounted) {
-      final l10n = AppLocalizations.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.offlineFileNotAvailable)),
-      );
-    }
-    return;
-  }
-
-  final tracker = GetIt.instance<OfflinePlaybackTracker>();
   final manager = GetIt.instance<PlaybackManager>();
-  final backend = manager.backend;
-  if (backend == null) return;
-
-  // The exit flow fires stop with unawaited, so the tracker's DB write may
-  // still be in flight.  Wait for it before reading the saved position.
-  await manager.pendingStop;
-
-  // Always read the latest position from the DB, not from the (potentially
-  // stale) UI item.  The stop callback writes the position asynchronously,
-  // so the DownloadedItem passed from the grid may not reflect it yet.
   final repo = GetIt.instance<OfflineRepository>();
-  final freshItem = await repo.getItem(item.itemId);
-  final startTicks = freshItem?.playbackPositionTicks ?? item.playbackPositionTicks;
+
+  // The exit flow fires stop unawaited; wait so the saved position is fresh.
+  await manager.pendingStop;
+  final fresh = await repo.getItem(item.itemId);
+  final startTicks = fresh?.playbackPositionTicks ?? item.playbackPositionTicks;
   final startPos = startTicks > 0
       ? Duration(microseconds: startTicks ~/ 10)
       : Duration.zero;
 
-  final metadata = jsonDecode(item.metadataJson) as Map<String, dynamic>;
-  final mediaType = metadata['MediaType'] as String?;
-  final type = metadata['Type'] as String?;
-  final isAudio =
-      mediaType == 'Audio' ||
-      type == 'Audio' ||
-      type == 'AudioBook' ||
-      type == 'MusicAlbum';
+  final start = AggregatedItem.fromOffline(item);
+  final downloaded = [
+    for (final row in episodeQueue ?? [item])
+      if (row.itemId == item.itemId ||
+          (row.localFilePath != null && row.downloadStatus == 2))
+        AggregatedItem.fromOffline(row),
+  ];
 
-  if (isAudio) {
-    await _injectLocalPaths(item, metadata);
+  // Like streaming: the queue is the whole season, and the resolver decides
+  // per episode whether the local file or the server serves it. If the server
+  // can't be reached, fall back to just what is downloaded.
+  var items = await _serverEpisodes(start) ?? downloaded;
+  var startIndex = items.indexWhere((e) => e.id == start.id);
+  if (startIndex < 0) {
+    items = downloaded;
+    startIndex = downloaded.indexWhere((e) => e.id == start.id);
   }
+  startIndex = startIndex.clamp(0, items.length - 1);
 
-  var queueUrls = const <String>[];
-  var startIndex = 0;
-  final metadataByUrl = <String, Map<String, dynamic>>{
-    result.url: metadata,
-  };
-
-  if (episodeQueue != null && episodeQueue.length > 1) {
-    queueUrls = episodeQueue
-        .where((e) => e.localFilePath != null && e.downloadStatus == 2)
-        .map((e) => e.localFilePath!)
-        .toList();
-    startIndex = queueUrls.indexOf(result.url).clamp(0, queueUrls.length - 1);
-    for (final ep in episodeQueue) {
-      if (ep.localFilePath != null && ep.downloadStatus == 2) {
-        final url = ep.localFilePath!;
-        final epMeta = jsonDecode(ep.metadataJson) as Map<String, dynamic>;
-        if (isAudio) {
-          await _injectLocalPaths(ep, epMeta);
-        }
-        metadataByUrl[url] = epMeta;
-      }
+  final rowsById = {for (final r in episodeQueue ?? [item]) r.itemId: r};
+  for (final agg in items) {
+    final row = rowsById[agg.id];
+    if (row != null && (agg.isAudioLike || agg.type == 'MusicAlbum')) {
+      await _injectLocalPaths(row, agg.rawData);
     }
   }
 
-  manager.setOfflineMetadataByUrl(metadataByUrl);
+  final isAudio = start.isAudioLike ||
+      start.type == 'MusicAlbum';
 
-  await manager.playOffline(
-    result.url,
-    startPosition: startPos,
-    itemDuration: result.duration,
-    queueUrls: queueUrls,
-    startIndex: startIndex,
-    onStop: () async => tracker.stopTracking(),
-    onAutoNext: (url) async {
-      await tracker.stopTracking();
-      if (episodeQueue == null) return;
-      final nextEp = episodeQueue.firstWhere(
-        (e) => e.localFilePath != null && e.localFilePath == url,
-        orElse: () => item,
-      );
-      final nextResult = await resolver.resolve(nextEp.itemId);
-      if (nextResult != null) {
-        await manager.playOffline(
-          nextResult.url,
-          itemDuration: nextResult.duration,
-          queueUrls: queueUrls,
-          startIndex: queueUrls.indexOf(nextResult.url).clamp(0, queueUrls.length - 1),
-          onStop: () async => tracker.stopTracking(),
-          onAutoNext: null,
-        );
-        for (final sub in nextResult.externalSubtitles) {
-          await backend.addExternalSubtitle(
-            sub.path,
-            title: sub.title,
-            language: sub.language,
-            codec: sub.codec,
-          );
-        }
-        await manager.applyOfflineDefaultTrackSelections();
-        await tracker.startTracking(
-          itemId: nextResult.itemId,
-          duration: nextResult.duration,
-          positionStream: backend.positionStream,
-        );
-      }
-    },
-  );
-
-  for (final sub in result.externalSubtitles) {
-    await backend.addExternalSubtitle(
-      sub.path,
-      title: sub.title,
-      language: sub.language,
-      codec: sub.codec,
-    );
-  }
-  await manager.applyOfflineDefaultTrackSelections();
-  await tracker.startTracking(
-    itemId: result.itemId,
-    duration: result.duration,
-    positionStream: backend.positionStream,
-  );
+  await manager.playItems(items, startIndex: startIndex, startPosition: startPos);
 
   if (context.mounted) {
     context.push(isAudio ? Destinations.audioPlayer : Destinations.videoPlayer);
+  }
+}
+
+Future<List<AggregatedItem>?> _serverEpisodes(AggregatedItem start) async {
+  final seriesId = start.rawData['SeriesId'] as String?;
+  if (start.type != 'Episode' || seriesId == null || seriesId.isEmpty) {
+    return null;
+  }
+  try {
+    final factory = GetIt.instance<MediaServerClientFactory>();
+    final client =
+        (start.serverId.isEmpty ? null : factory.getClientIfExists(start.serverId)) ??
+        GetIt.instance<MediaServerClient>();
+    final data = await client.itemsApi
+        .getEpisodes(
+          seriesId,
+          seasonId: start.rawData['SeasonId'] as String?,
+          fields:
+              'Overview,MediaStreams,MediaSources,RunTimeTicks,Trickplay,UserData,Chapters',
+        )
+        .timeout(const Duration(seconds: 4));
+    final list = [
+      for (final raw in (data['Items'] as List? ?? const []))
+        if (raw is Map<String, dynamic>)
+          AggregatedItem(
+            id: raw['Id'] as String? ?? '',
+            serverId: start.serverId,
+            rawData: raw,
+          ),
+    ];
+    return list.length > 1 ? list : null;
+  } catch (_) {
+    return null;
   }
 }
 
