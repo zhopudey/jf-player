@@ -23,6 +23,7 @@ import '../models/download_quality.dart';
 import '../repositories/offline_repository.dart';
 import 'book_reader_service.dart';
 import 'download_notification_service.dart';
+import 'log_service.dart';
 import 'media_store_service.dart';
 import 'native_downloader.dart';
 import 'storage_path_service.dart';
@@ -280,13 +281,19 @@ class DownloadService extends ChangeNotifier {
     }
 
     final prefix = '${fileNameBase}_sub_';
+    // The `<video>.<lang>.<ext>` alias written alongside each `_sub_N` file. The
+    // leading dot and the subtitle extension keep the video itself out of reach.
+    final aliasPattern = RegExp(
+      '^${RegExp.escape(fileNameBase)}\\.[^./\\\\]+\\.(srt|ass|ssa|vtt|ttml|sub)\$',
+      caseSensitive: false,
+    );
     await for (final entity in dir.list()) {
       if (entity is! File) {
         continue;
       }
 
       final name = p.basename(entity.path);
-      if (name.startsWith(prefix)) {
+      if (name.startsWith(prefix) || aliasPattern.hasMatch(name)) {
         await entity.delete();
       }
     }
@@ -597,6 +604,7 @@ class DownloadService extends ChangeNotifier {
     required String savePath,
     required Directory dir,
     required String fileName,
+    required String subFolder,
   }) async {
     Future<void> runBestEffort(Future<void> task, Duration timeout) async {
       try {
@@ -632,8 +640,8 @@ class DownloadService extends ChangeNotifier {
     }
 
     await runBestEffort(
-      _downloadExternalSubtitles(item, dir, fileNameBase),
-      const Duration(seconds: 30),
+      _downloadExternalSubtitles(item, dir, fileNameBase, subFolder),
+      const Duration(minutes: 10),
     );
   }
 
@@ -1320,7 +1328,14 @@ class DownloadService extends ChangeNotifier {
   }
 
   Future<AggregatedItem> _ensureFullItem(AggregatedItem item) async {
-    if (item.mediaSources.isNotEmpty) return item;
+    // MediaStreams carry the external-subtitle streams, and a list response can
+    // omit them. Without them no subtitle is downloaded and, because the same
+    // metadata is stored for offline playback, none can be found later either.
+    final sources = item.mediaSources;
+    final hasStreams =
+        sources.isNotEmpty &&
+        ((sources.first['MediaStreams'] as List?)?.isNotEmpty ?? false);
+    if (hasStreams) return item;
     final data = await _client.itemsApi.getItem(item.id);
     return AggregatedItem(id: item.id, serverId: item.serverId, rawData: data);
   }
@@ -1610,6 +1625,7 @@ class DownloadService extends ChangeNotifier {
           savePath: savePath,
           dir: dir,
           fileName: fileName,
+          subFolder: subFolder,
         ),
       );
     } on DioException catch (e) {
@@ -1834,16 +1850,22 @@ class DownloadService extends ChangeNotifier {
       final subFolder = _buildSubFolder(item);
       final targetDir = Directory('${downloadsDir.path}/$subFolder');
       final imageDir = await _storagePath.getImageCacheDir();
+      // Where these items actually landed, which is not necessarily under the
+      // current download root: changing the location leaves earlier downloads
+      // behind, and a delete that only looks at the current root orphans them.
+      final storedRows = await _storedRowsFor(item);
 
       switch (item.type) {
         case 'Movie':
           if (await targetDir.exists()) await targetDir.delete(recursive: true);
+          await _deleteStoredArtifacts(storedRows, downloadsDir);
           await _deleteItemImages(item.id, imageDir);
           await _offlineRepo.deleteItem(item.id);
           return true;
 
         case 'Episode':
           await _deleteCandidateFileArtifacts(targetDir, item, downloadsDir);
+          await _deleteStoredArtifacts(storedRows, downloadsDir);
           await _deleteItemImages(item.id, imageDir);
           await _offlineRepo.deleteItem(item.id);
           await _cleanupEpisodeContainers(item, imageDir);
@@ -1853,6 +1875,7 @@ class DownloadService extends ChangeNotifier {
         case 'AudioBook':
         case 'Book':
           await _deleteCandidateFileArtifacts(targetDir, item, downloadsDir);
+          await _deleteStoredArtifacts(storedRows, downloadsDir);
           await _deleteItemImages(item.id, imageDir);
           await _offlineRepo.deleteItem(item.id);
           return true;
@@ -1867,6 +1890,7 @@ class DownloadService extends ChangeNotifier {
               if (remaining == 0) await seriesDir.delete();
             }
           }
+          await _deleteStoredArtifacts(storedRows, downloadsDir);
           await _deleteImagesForIds(seasonImageIds, imageDir);
           await _offlineRepo.deleteSeasonItems(item.id);
           return true;
@@ -1876,6 +1900,7 @@ class DownloadService extends ChangeNotifier {
           final seriesName = _sanitizePath(item.seriesName ?? item.name);
           final seriesDir = Directory('${downloadsDir.path}/TV/$seriesName');
           if (await seriesDir.exists()) await seriesDir.delete(recursive: true);
+          await _deleteStoredArtifacts(storedRows, downloadsDir);
           await _deleteImagesForIds(seriesImageIds, imageDir);
           await _offlineRepo.deleteSeriesItems(item.id);
           return true;
@@ -1886,6 +1911,7 @@ class DownloadService extends ChangeNotifier {
           );
           if (await defaultDir.exists())
             await defaultDir.delete(recursive: true);
+          await _deleteStoredArtifacts(storedRows, downloadsDir);
           await _deleteItemImages(item.id, imageDir);
           await _offlineRepo.deleteItem(item.id);
           return true;
@@ -1893,6 +1919,49 @@ class DownloadService extends ChangeNotifier {
     } catch (_) {
       return false;
     }
+  }
+
+  /// The rows a delete has to clean up: an episode/movie leaves one, a season or
+  /// a series leaves one per episode, all of which carry their own file path.
+  Future<List<DownloadedItem>> _storedRowsFor(AggregatedItem item) async {
+    switch (item.type) {
+      case 'Series':
+        return _offlineRepo.getSeriesEpisodes(item.id);
+      case 'Season':
+        return _offlineRepo.getSeasonEpisodes(item.id);
+      default:
+        final row = await _offlineRepo.getItem(item.id);
+        return row == null ? const [] : [row];
+    }
+  }
+
+  /// Deletes each row's recorded file along with its sidecar subtitles.
+  Future<void> _deleteStoredArtifacts(
+    Iterable<DownloadedItem> rows,
+    Directory fallbackRoot,
+  ) async {
+    for (final row in rows) {
+      final path = row.localFilePath;
+      if (path == null || path.isEmpty) continue;
+      final file = File(path);
+      try {
+        if (await file.exists()) await file.delete();
+        await _deleteSubtitleFiles(file.parent, _fileNameBaseFromPath(path));
+        await _deleteEmptyDirectoriesUpTo(
+          file.parent,
+          _storedRootOf(path, fallbackRoot),
+        );
+      } catch (_) {}
+    }
+  }
+
+  /// The download root a stored path sits under, for the empty-directory sweep.
+  /// Falls back to the current root, which simply stops the walk early.
+  Directory _storedRootOf(String path, Directory fallback) {
+    final segments = p.split(path);
+    final index = segments.lastIndexOf('Moonfin');
+    if (index <= 0) return fallback;
+    return Directory(p.joinAll(segments.sublist(0, index + 1)));
   }
 
   Future<void> _deleteItemImages(String itemId, Directory imageDir) async {
@@ -2047,23 +2116,91 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
+  /// Embedded subtitles the server may be asked to extract per item. Sidecars
+  /// are free and always taken; this only bounds the ones needing an ffmpeg run
+  /// (a remux can carry 40+ of them, each a separate extraction).
+  static const int _maxEmbeddedSubtitleDownloads = 3;
+
+  /// `<video>.<lang>.<ext>` — the sidecar shape MX Player and VLC look for.
+  /// Falls back to the subtitle's stream index when it carries no language, and
+  /// to `<lang>.<index>` when one language has several tracks (duplicate names
+  /// would make MediaStore rename the file to "name (1).srt").
+  String _subtitleAliasName({
+    required String fileNameBase,
+    required String ext,
+    required String? language,
+    required int index,
+    required Set<String> used,
+  }) {
+    final code = (language ?? '').trim().toLowerCase();
+    if (code.isEmpty) return '$fileNameBase.$index.$ext';
+    final first = '$fileNameBase.$code.$ext';
+    if (used.add(first)) return first;
+    return '$fileNameBase.$code.$index.$ext';
+  }
+
   Future<void> _downloadExternalSubtitles(
     AggregatedItem item,
     Directory dir,
     String fileNameBase,
+    String subFolder,
   ) async {
     final mediaSources = item.mediaSources;
     if (mediaSources.isEmpty) return;
     final source = mediaSources.first;
     final mediaSourceId = source['Id']?.toString() ?? item.id;
     final streams = (source['MediaStreams'] as List?) ?? [];
-    final authOptions = Options(headers: _buildAuthHeaders());
-    for (final stream in streams) {
-      if (stream is! Map<String, dynamic>) continue;
-      if (stream['Type'] != 'Subtitle') continue;
+    // Generous per stream: an embedded subtitle is extracted server-side, and
+    // one measured 28.7 s on the lab server before it was ever written.
+    const timeout = Duration(seconds: 120);
+    final authOptions = Options(
+      headers: _buildAuthHeaders(),
+      receiveTimeout: timeout,
+      sendTimeout: timeout,
+    );
+    final bytesOptions = Options(
+      headers: _buildAuthHeaders(),
+      responseType: ResponseType.bytes,
+      receiveTimeout: timeout,
+      sendTimeout: timeout,
+    );
+    // In the public Downloads folder the app owns no writable path: a dart:io
+    // write there is silently discarded, so the bytes go through the MediaStore.
+    final viaMediaStore =
+        PlatformDetection.isAndroid && _storagePath.isUsingMediaStore;
+
+    // Sidecars first: they are already text on disk and cost the server nothing
+    // (0.1 s measured), where an embedded stream has to be extracted.
+    final candidates =
+        streams
+            .whereType<Map<String, dynamic>>()
+            .where((s) => s['Type'] == 'Subtitle')
+            .where(
+              (s) =>
+                  s['IsExternal'] == true ||
+                  s['SupportsExternalStream'] == true,
+            )
+            // Bitmap streams (PGS/VobSub) have no srt to download, and asking for
+            // one leaves the request hanging.
+            .where((s) => isTextSubtitleCodec(s['Codec'] as String?))
+            .toList()
+          ..sort((a, b) {
+            final aExternal = a['IsExternal'] == true ? 0 : 1;
+            final bExternal = b['IsExternal'] == true ? 0 : 1;
+            if (aExternal != bExternal) return aExternal - bExternal;
+            return (a['Index'] as int? ?? 0).compareTo(b['Index'] as int? ?? 0);
+          });
+
+    var embeddedDownloads = 0;
+    final usedAliases = <String>{};
+    for (final stream in candidates) {
       final isExternal = stream['IsExternal'] == true;
-      final supportsExternal = stream['SupportsExternalStream'] == true;
-      if (!isExternal && !supportsExternal) continue;
+      // A remux can carry dozens of embedded subtitles, each one an ffmpeg run
+      // on the server; a couple is plenty to watch offline with.
+      if (!isExternal) {
+        if (embeddedDownloads >= _maxEmbeddedSubtitleDownloads) continue;
+        embeddedDownloads++;
+      }
       final index = stream['Index'] as int? ?? 0;
       final ext = canonicalSubtitleCodec(stream['Codec'] as String?);
       // DeliveryUrl is computed by the server during PlaybackInfo and is often
@@ -2077,10 +2214,53 @@ class DownloadService extends ChangeNotifier {
       final subUrl = deliveryUrl.startsWith('http')
           ? deliveryUrl
           : '${_client.baseUrl}$deliveryUrl';
-      final subPath = '${dir.path}/${fileNameBase}_sub_$index.$ext';
+      final subFileName = '${fileNameBase}_sub_$index.$ext';
+      // Other players (MX Player, VLC) only auto-load conventional sidecar
+      // names, so each subtitle also lands as `<video>.<lang>.<ext>`.
+      final aliasFileName = _subtitleAliasName(
+        fileNameBase: fileNameBase,
+        ext: ext,
+        language: stream['Language'] as String?,
+        index: index,
+        used: usedAliases,
+      );
       try {
-        await _downloadDio.download(subUrl, subPath, options: authOptions);
-      } catch (_) {}
+        if (viaMediaStore) {
+          final response = await _downloadDio.get<List<int>>(
+            subUrl,
+            options: bytesOptions,
+          );
+          final bytes = response.data;
+          if (bytes == null || bytes.isEmpty) {
+            throw StateError('empty subtitle response');
+          }
+          final payload = Uint8List.fromList(bytes);
+          await MediaStoreService.writeFile(
+            fileName: subFileName,
+            relativePath: subFolder,
+            bytes: payload,
+          );
+          await MediaStoreService.writeFile(
+            fileName: aliasFileName,
+            relativePath: subFolder,
+            bytes: payload,
+          );
+        } else {
+          final subPath = '${dir.path}/$subFileName';
+          await _downloadDio.download(subUrl, subPath, options: authOptions);
+          await File(subPath).copy('${dir.path}/$aliasFileName');
+        }
+      } catch (e) {
+        // Subs are best-effort, but a silent failure here is invisible until
+        // playback — leave a trail in the in-app log.
+        if (GetIt.instance.isRegistered<LogService>()) {
+          GetIt.instance<LogService>().media(
+            'Subtitle download failed: ${item.name} ($subFileName)',
+            level: LogLevel.warning,
+            error: e,
+          );
+        }
+      }
     }
   }
 
