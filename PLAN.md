@@ -113,6 +113,10 @@ Do not merge 4,281 commits into the old fork.
       (`1bf7be58`), offline track switching (`7506af4c`), the DownloadManager speed path
       (`8aafc345`; re-measure against upstream's queue first, per the speed-ceiling finding). Done =
       each is either confirmed fixed upstream or ported.
+- **Status 2026-11-16:** 6.1–6.3 are coded on `upstream-3.1` (commit `e6a70975`) and the analyzer
+  passes. Released as `v3.1.0-30000163`. Nothing is ticked until it passes on the device.
+  Build box toolchain for upstream: Flutter **3.47.2**, JDK **Temurin 17** (`~/jdk-17`, set with
+  `flutter config --jdk-dir`; JDK 21 breaks `file_picker`), and Gradle forced onto IPv4.
 - [ ] **6.5 Build, release and install on the tab** with the same signing key and package
       (`org.moonfin.androidtv.beta`, build number > 30000140). Done = it updates in place, downloads intact.
 - [ ] **6.6 Re-judge sections 4–5 against Smart downloads.** Done = each item in 4–5 is marked
