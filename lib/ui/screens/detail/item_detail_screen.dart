@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import '../downloads/download_picker_screen.dart';
 import '../../theme/focus_foreground.dart';
 import '../../widgets/bounded_network_image.dart';
 import '../../widgets/offline_aware_image.dart';
@@ -12271,6 +12272,55 @@ class _DownloadButtonState extends State<_DownloadButton> {
                             items: allItems.where((i) => !i.isPlayed).toList(),
                             loading: loading,
                           ),
+                          // Fork: pick exactly which episodes, with the
+                          // selection's size against the space left.
+                          if (!isCollection && !PlatformDetection.isTV)
+                            DpadListTile(
+                              autofocus: false,
+                              enabled: loading || allItems.isNotEmpty,
+                              leading: const AdaptiveIcon(
+                                Icons.checklist,
+                                color: Colors.white70,
+                              ),
+                              title: const Text(
+                                'Choose episodes…',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                              subtitle: Text(
+                                loading
+                                    ? l10n.downloadScopeLoading
+                                    : 'Pick episodes and see the space they need',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              onTap: () async {
+                                if (loading || allItems.isEmpty) return;
+                                final picked = await Navigator.of(sheetContext)
+                                    .push<List<AggregatedItem>>(
+                                      MaterialPageRoute(
+                                        builder: (_) => DownloadPickerScreen(
+                                          title: item.name,
+                                          imageApi: GetIt.instance<
+                                                  MediaServerClient
+                                                >()
+                                              .imageApi,
+                                          groupBySeason: item.type == 'Series',
+                                          seriesId: item.type == 'Series'
+                                              ? item.id
+                                              : item.seriesId,
+                                          loadEpisodes: () async => allItems,
+                                        ),
+                                      ),
+                                    );
+                                if (picked == null ||
+                                    picked.isEmpty ||
+                                    !sheetContext.mounted) {
+                                  return;
+                                }
+                                Navigator.pop(sheetContext, picked);
+                              },
+                            ),
                         ],
                       );
                     },

@@ -485,6 +485,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   double _verticalDragStartValue = 0.0;
   bool _verticalDragIsVolume = false;
   bool _verticalDragIgnored = false;
+  // Horizontal swipe-to-seek (fork). Preview only during the drag; one seek
+  // is committed on release, so the backend is never scrubbed mid-gesture.
+  final GlobalKey _seekbarKey = GlobalKey(debugLabel: 'video_player_seekbar');
+  double? _hSeekStartX;
+  Duration? _hSeekStartPosition;
+  Duration? _hSeekPreviewTarget;
+  bool _isHorizontalSeeking = false;
+  bool _hSeekIgnored = false;
   late final _surfaceTaps = PlayerSurfaceTaps(
     onSingleTap: () {
       if (mounted) _toggleControls();
@@ -3031,14 +3039,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       }
       final playing = _state.isPlaying;
       if (!playing && !_hasPausedDescriptionCard) return;
-      setState(() {
-        _controlsVisible = false;
-        if (playing &&
-            PlatformDetection.isMobile &&
-            _prefs.get(UserPreferences.osdLockEnabled)) {
-          _isOsdLocked = true;
-        }
-      });
+      // Fork: locking is explicit (the lock button), never automatic on hide.
+      setState(() => _controlsVisible = false);
     });
   }
 
@@ -4107,6 +4109,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         PlatformDetection.useMobileUi &&
         !_isOsdLocked &&
         _prefs.get(UserPreferences.playerSwipeGestures);
+    // Fork: horizontal swipe seeks. Independent of the volume/brightness
+    // switch, off while locked and on TV.
+    final swipeSeek = PlatformDetection.useMobileUi && !_isOsdLocked;
     // Only with the controls down, so a slow press on a button isn't taken
     // for a hold. It stays on while held, or the release would never arrive.
     final holdForSpeed =
@@ -4154,6 +4159,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             onVerticalDragUpdate: swipeGestures ? _onVerticalDragUpdate : null,
             onVerticalDragEnd: swipeGestures ? _onVerticalDragEnd : null,
             onVerticalDragCancel: swipeGestures ? _onVerticalDragCancel : null,
+            onHorizontalDragStart: swipeSeek ? _onHorizontalDragStart : null,
+            onHorizontalDragUpdate: swipeSeek ? _onHorizontalDragUpdate : null,
+            onHorizontalDragEnd: swipeSeek ? _onHorizontalDragEnd : null,
+            onHorizontalDragCancel: swipeSeek ? _resetHorizontalSeek : null,
             onLongPressStart: holdForSpeed ? _onSurfaceLongPressStart : null,
             onLongPressEnd: holdForSpeed ? (_) => _onSurfaceLongPressEnd() : null,
             onLongPressCancel: holdForSpeed ? _onSurfaceLongPressEnd : null,
@@ -4309,6 +4318,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       if (PlatformDetection.useMobileUi)
                         _buildBrightnessOverlay(),
                       _buildSkipIndicatorOverlay(),
+                      if (PlatformDetection.useMobileUi)
+                        _buildHorizontalSeekOverlay(),
                       if (_temporarySpeedActive && !PlatformDetection.isTV)
                         _buildTemporarySpeedOverlay(),
                       if (_isOsdLocked && !hideOsdForPreroll)
@@ -5003,8 +5014,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   size: 30 * _osdButtonScale,
                 ),
               ),
-            if (PlatformDetection.useMobileUi &&
-                _prefs.get(UserPreferences.osdLockEnabled))
+            // Fork: the lock button is always offered on mobile.
+            if (PlatformDetection.useMobileUi)
               IconButton(
                 onPressed: () {
                   _hideTimer?.cancel();
@@ -5452,6 +5463,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                               ? (_) => _clearSeekbarHover()
                               : null,
                           child: Focus(
+                            key: _seekbarKey,
                             focusNode: _tvSeekbarFocus,
                             onKeyEvent: (node, event) {
                               if (!PlatformDetection.isTV ||
@@ -6877,6 +6889,151 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
   }
 
+  /// True when [globalPosition] is on the on-screen seekbar, so a drag that
+  /// starts there scrubs the slider instead of swipe-seeking.
+  bool _isWithinSeekbarHitBand(Offset globalPosition) {
+    final renderObject = _seekbarKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    // Padded vertically: the bar is thinner than its touch target.
+    final band = Rect.fromLTWH(
+      topLeft.dx,
+      topLeft.dy - 12,
+      renderObject.size.width,
+      renderObject.size.height + 24,
+    );
+    return band.contains(globalPosition);
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    final width = MediaQuery.sizeOf(context).width;
+    final dx = details.localPosition.dx;
+    // Android's back gesture lives in the side edges; leave those alone.
+    const edge = 28.0;
+    _hSeekIgnored =
+        dx < edge ||
+        dx > width - edge ||
+        (_controlsVisible && _isWithinSeekbarHitBand(details.globalPosition));
+    if (_hSeekIgnored) return;
+    _hSeekStartX = dx;
+    _hSeekStartPosition = _activeBackend?.position ?? _state.position;
+    _hSeekPreviewTarget = _hSeekStartPosition;
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (_hSeekIgnored) return;
+    final startX = _hSeekStartX;
+    final startPosition = _hSeekStartPosition;
+    if (startX == null || startPosition == null) return;
+    final duration = _state.duration;
+    if (duration <= Duration.zero) return;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    if (screenWidth <= 0) return;
+    // Sensitivity follows content length, clamped so very short and very
+    // long items both stay controllable.
+    final msPerPixel = (duration.inMilliseconds / screenWidth).clamp(
+      150.0,
+      2000.0,
+    );
+    final deltaX = details.localPosition.dx - startX;
+    final targetMs = (startPosition.inMilliseconds + deltaX * msPerPixel)
+        .round()
+        .clamp(0, duration.inMilliseconds);
+    setState(() {
+      _isHorizontalSeeking = true;
+      _hSeekPreviewTarget = Duration(milliseconds: targetMs);
+    });
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    final target = _hSeekPreviewTarget;
+    final commit = !_hSeekIgnored && _isHorizontalSeeking && target != null;
+    _resetHorizontalSeek();
+    if (!commit) return;
+    unawaited(_manager.seekTo(target));
+    _showControls();
+  }
+
+  void _resetHorizontalSeek() {
+    _hSeekStartX = null;
+    _hSeekStartPosition = null;
+    _hSeekIgnored = false;
+    if (_isHorizontalSeeking || _hSeekPreviewTarget != null) {
+      setState(() {
+        _isHorizontalSeeking = false;
+        _hSeekPreviewTarget = null;
+      });
+    }
+  }
+
+  Widget _buildHorizontalSeekOverlay() {
+    final target = _hSeekPreviewTarget;
+    final start = _hSeekStartPosition;
+    if (!_isHorizontalSeeking || target == null || start == null) {
+      return const SizedBox.shrink();
+    }
+    final deltaSeconds = target.inSeconds - start.inSeconds;
+    final sign = deltaSeconds < 0 ? '-' : '+';
+    final deltaLabel =
+        '$sign${formatPlaybackDuration(Duration(seconds: deltaSeconds.abs()))}';
+    final tile = _getTrickplayTile(target);
+    const thumbWidth = 220.0;
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (tile != null && tile.thumbWidth > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.spaceSm),
+                  child: ClipRRect(
+                    borderRadius: AppRadius.circular(8),
+                    child: SizedBox(
+                      width: thumbWidth,
+                      height: thumbWidth * tile.thumbHeight / tile.thumbWidth,
+                      child: _trickplayTileImage(tile),
+                    ),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.72),
+                  borderRadius: AppRadius.circular(40),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      formatPlaybackDuration(target),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      deltaLabel,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildVolumeOverlay() {
     final displayVolume = _useSystemVolume
         ? _systemVolume
@@ -7101,7 +7258,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               child: IgnorePointer(
                 ignoring: !_controlsVisible,
                 child: GestureDetector(
-                  onLongPress: () {
+                  // Fork: tap the lock to unlock (it only shows after a tap
+                  // on the locked screen, so a stray touch can't unlock).
+                  onTap: () {
                     setState(() {
                       _isOsdLocked = false;
                       _controlsVisible = true;
@@ -7132,7 +7291,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          AppLocalizations.of(context).longPressToUnlock,
+                          // Fork: unlock is a tap now (en only; no l10n key).
+                          'Tap to unlock',
                           style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 13,
