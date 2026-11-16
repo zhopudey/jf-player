@@ -4,6 +4,11 @@
 (OnePlus Pad 2, 256 GB). Updates install without Developer options or a PC, and an
 update or reinstall never wipes downloads.
 
+**⚠️ 2026-11-16: the fork is moving onto upstream Moonfin 3.1.0 (section 6).** The fork split off
+around 2.2.0 and was 4,281 commits behind. Upstream now has local-first playback, a free-space
+check, server-reachability retry and Smart downloads. Sections 2, 4 and 5 below are re-judged against
+upstream in section 6. Branch `upstream-3.1` replaces `main` once 6.5 passes.
+
 Each item states what **done** means: an observable fact, not "the code was written".
 New discoveries go into this list (or are named as a blocker on an item). They never go
 into a separate list.
@@ -85,3 +90,32 @@ from either device or from Jellyfin web.
 - [ ] **4.4 Background sync (optional).** Done = sync runs on Wi-Fi + charging without opening
       the app. A sleeping tab in Doze still won't react instantly; the ntfy wake idea
       ("push to sleeping tab") stays on the wishlist.
+
+## 6. Move onto upstream 3.1.0 (decided 2026-11-16)
+Approach: start from upstream tag `3.1.0` (branch `upstream-3.1`) and port only what upstream lacks.
+Do not merge 4,281 commits into the old fork.
+- [x] **6.0 Audit, fork vs upstream 3.1.0.** Already upstream, so dropped: local-first playback
+      (`LocalFirstMediaStreamResolver`), mixed local/online queues, the free-space check (better than
+      ours: it reserves space for concurrent downloads), the server-reachability retry (covers most
+      of 5.1), offline progress sync on reopen, the download concurrency queue, Smart downloads (keep
+      the next N episodes, delete watched), and "Play from Server". Our mpv buffer bump is dropped:
+      upstream deliberately keeps the mpv default on phones (a bigger cache risks the OS killing the app).
+- [ ] **6.1 Port swipe-to-seek + lock-button rework** (ours: `7f03b2a9`, spec §5–6) onto upstream's
+      rebuilt player. Done = horizontal swipe seeks with a time preview on the tab, and vertical
+      swipes still do brightness/volume.
+- [ ] **6.2 Port the per-episode download picker** (ours: `667baee9`, `d57ce8f4`). Upstream only asks
+      "all or unwatched". Done = Season/Series → Download opens the episode picker; downloaded
+      episodes are badged.
+- [ ] **6.3 "Space low — select episodes"** (Rohan's 4.1 decision) on the picker, using upstream's
+      `storageHeadroomBytes()`. Done = a selection bigger than the headroom shows the warning and
+      the running total.
+- [ ] **6.4 Re-test our old fixes on upstream before porting any of them:** SRT/VTT rendering
+      (`1bf7be58`), offline track switching (`7506af4c`), the DownloadManager speed path
+      (`8aafc345`; re-measure against upstream's queue first, per the speed-ceiling finding). Done =
+      each is either confirmed fixed upstream or ported.
+- [ ] **6.5 Build, release and install on the tab** with the same signing key and package
+      (`org.moonfin.androidtv.beta`, build number > 30000140). Done = it updates in place, downloads intact.
+- [ ] **6.6 Re-judge sections 4–5 against Smart downloads.** Done = each item in 4–5 is marked
+      covered by upstream, still wanted, or dropped (with Rohan).
+- [ ] **6.7 Spec items not done yet:** quality pill (spec §1) and auto Media3 for HDR (spec §2).
+      Upstream has neither. Done = Rohan decides whether they come into the plan.
