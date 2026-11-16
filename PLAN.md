@@ -1,0 +1,60 @@
+# jf-player — PLAN (living; tick items as they land)
+
+**End goal:** downloads stay in step between Rohan's phone (Oppo Find X8 Pro, 512 GB) and tab
+(OnePlus Pad 2, 256 GB). Updates install without Developer options or a PC, and an
+update or reinstall never wipes downloads.
+
+Each item states what **done** means: an observable fact, not "the code was written".
+New discoveries go into this list (or are named as a blocker on an item). They never go
+into a separate list.
+
+## 0. Groundwork
+- [x] **0.1 Repo reopened.** Done = GitHub `isArchived: false`. *(2026-11-16)*
+- [x] **0.2 One permanent signing key.** Done = release builds sign with the key the tab's
+      installed app already uses (cert SHA-256 `2372fadb…0b662c`, checked against the Aug 2026
+      APK). The key is backed up off the build box. Passwords are kept in the lab's private
+      secrets store, never in this repo. *(2026-11-16)*
+- [ ] **0.3 Build checkout clean.** Done = the build box's checkout is on `origin/main` with no
+      stray changes. Today it is 2 commits behind; 6 of its 7 dirty files already match origin,
+      and the 7th is a generated l10n file. Two old stashes from August 2026 need a keep/drop decision.
+- [ ] **0.4 A release APK installs over the existing app on the tab.** Done = the tab updates in
+      place and its downloads are still there afterwards. This proves 0.2 end to end.
+
+## 1. Install without ADB
+- [ ] **1.1 Publish APKs to a fixed URL.** Done = every release build lands where the phone can
+      fetch it (a GitHub release or the projects share).
+- [ ] **1.2 Obtainium tracks it.** Done = phone and tab both get an update prompt for a new
+      build without Developer options.
+
+## 2. Free space before downloading
+- [ ] **2.1 Read real device free space** (Android `StatFs` on the download root). Done = the
+      download dialog shows "≈ X GB needed · Y GB free".
+- [ ] **2.2 Refuse what won't fit.** Done = a download (or a whole season, summed *before*
+      queueing) larger than free space minus a reserve is refused with one short line, and
+      nothing is half-queued. Today's check (`download_service.dart` `_checkStorageLimit`) only
+      compares against the user's own storage-limit setting.
+
+## 3. Custom download location — must be TESTED before sync relies on it
+- [ ] **3.1 Test a custom download location on Android 16.** Done = on the tab, downloads
+      written to a user-chosen folder outside `Android/data/<app>` play back, survive an app
+      update, **and survive an uninstall + reinstall**. Why: the default
+      `Android/data/<app>/files/Moonfin` is deleted on uninstall, and the public-Downloads
+      ("mediastore") path is known broken on Android 16 (branch
+      `downloads-public-folder-and-fast-copy`: raw-path writes are discarded).
+- [ ] **3.2 Rescan / adopt existing files.** Done = after a reinstall (or on a new device) the
+      app finds media already in the download folder and lists it as downloaded, without
+      fetching it again. Blocked by 3.1.
+
+## 4. Sync downloads between phone and tab
+Design: a Jellyfin **playlist** ("Offline") is the shared list. Each device downloads whatever
+is on it and missing locally, **from the server**, never device-to-device. Items can be added
+from either device or from Jellyfin web.
+- [ ] **4.1 Decisions (Rohan):** (a) mirror deletes, or additions only? (proposed: additions
+      only) (b) everything on both devices, or per-item "both"? (c) series: the whole show or the
+      next N unwatched episodes?
+- [ ] **4.2 Sync on app open.** Done = add an item on the phone, open the app on the tab, and the
+      item downloads there. Honours 2.2 (stops at what fits — the tab is the smaller device).
+- [ ] **4.3 Per-device quality.** Done = each device can pick original or a transcode for synced items.
+- [ ] **4.4 Background sync (optional).** Done = sync runs on Wi-Fi + charging without opening
+      the app. A sleeping tab in Doze still won't react instantly; the ntfy wake idea
+      ("push to sleeping tab") stays on the wishlist.
