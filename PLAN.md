@@ -18,6 +18,26 @@ into a separate list.
       stray changes. *(2026-11-16; the two Aug 2026 stashes are kept, not dropped.)*
 - [ ] **0.4 A release APK installs over the existing app on the tab.** Done = the tab updates in
       place and its downloads are still there afterwards. This proves 0.2 end to end.
+- [ ] **0.5 On-device test of the existing online/offline behaviour** (so far only read in code).
+      Done = all of these pass on the tab: (a) play a downloaded title from the library and it plays
+      from the device; (b) eps 1–3 downloaded, ep 4 not, and ep 4 streams with no prompt; (c) watch
+      a download with no network, reconnect, and the server shows the new position; (d) watch online
+      after watching offline, and the furthest position wins.
+
+## 5. Seamless online/offline
+Goal (Rohan, 2026-11-16): hit play on any title. Downloaded → play from device. Otherwise, if
+online → stream. Mixed seasons play straight through. Watch progress syncs by itself
+whenever the server is reachable. Already in code: the per-episode local-or-stream choice
+(`OfflineFirstStreamResolver`, wired for every play path), mixed season queues (`c2fd99d3`),
+and progress push/pull (`SyncService`). Verified by 0.5.
+- [ ] **5.1 Re-sync when the server comes back, not only when the network changes.** Today the
+      sync fires only on a connectivity transition (`connectivity_service.dart`), so if the network
+      stays up while the server is unreachable, nothing syncs until the app restarts. Done = with
+      Wi-Fi up, block the server, watch a download, unblock, and the server has the position
+      within ~1 min without restarting the app.
+- [ ] **5.2 Decision (Rohan): browsing while the server is unreachable.** Today only the Downloads
+      screen works (`app_router.dart` `_isOfflineAllowed`). Options: keep that, or show the cached
+      library pages with only downloaded titles playable. Done = decision recorded here.
 
 ## 1. Install without ADB
 - [ ] **1.1 Publish APKs to a fixed URL.** Done = every release build lands where the phone can
