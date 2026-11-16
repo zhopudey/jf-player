@@ -18,6 +18,15 @@ class ConnectivityService extends ChangeNotifier {
   ));
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   Timer? _recheckDebounce;
+  Timer? _serverWatch;
+
+  /// How often the server is re-pinged while the network is up. A server that
+  /// drops and returns while Wi-Fi stays connected produces no connectivity
+  /// event, so without this poll pending offline progress would sit unsynced
+  /// until the next network change or app restart. Faster while unreachable,
+  /// so recovery is noticed quickly.
+  static const _watchReachable = Duration(seconds: 60);
+  static const _watchUnreachable = Duration(seconds: 20);
 
   bool _isOnline = true;
   bool get isOnline => _isOnline;
@@ -42,7 +51,26 @@ class ConnectivityService extends ChangeNotifier {
       _subscription =
           _connectivity.onConnectivityChanged.listen(_onConnectivityChanged);
     }
-    _checkInitialState();
+    _checkInitialState().then((_) => _scheduleServerWatch());
+  }
+
+  void _scheduleServerWatch() {
+    _serverWatch?.cancel();
+    _serverWatch = Timer(
+      _serverReachable ? _watchReachable : _watchUnreachable,
+      _onServerWatchTick,
+    );
+  }
+
+  Future<void> _onServerWatchTick() async {
+    if (_isOnline) {
+      final wasReachable = _serverReachable;
+      await _checkServerReachability();
+      if (_serverReachable && !wasReachable) {
+        _triggerSync();
+      }
+    }
+    _scheduleServerWatch();
   }
 
   Future<void> _checkInitialState() async {
@@ -147,10 +175,14 @@ class ConnectivityService extends ChangeNotifier {
   }
 
   Future<void> recheckNow() async {
+    final wasReachable = canReachServer;
     final results = await _connectivity.checkConnectivity();
     _isOnline = results.any((r) => r != ConnectivityResult.none);
     if (_isOnline) {
       await _checkServerReachability();
+      if (_serverReachable && !wasReachable) {
+        _triggerSync();
+      }
     } else {
       _serverReachable = false;
       notifyListeners();
@@ -161,6 +193,7 @@ class ConnectivityService extends ChangeNotifier {
   void dispose() {
     _subscription?.cancel();
     _recheckDebounce?.cancel();
+    _serverWatch?.cancel();
     super.dispose();
   }
 }

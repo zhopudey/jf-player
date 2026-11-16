@@ -12,6 +12,7 @@ import 'package:get_it/get_it.dart';
 import 'package:path/path.dart' as p;
 import 'package:server_core/server_core.dart';
 
+import '../../platform/device_storage.dart';
 import '../../platform/ios_storage.dart';
 import '../../playback/subtitle_formats.dart';
 import '../../preference/user_preferences.dart';
@@ -1406,6 +1407,19 @@ class DownloadService extends ChangeNotifier {
         return;
       }
       final downloadsDir = await _storagePath.getOfflineRoot();
+      final freeBytes = await DeviceStorage.freeBytes(downloadsDir.path);
+      if (!DeviceStorage.fits(estimatedSize, freeBytes)) {
+        final msg =
+            'Not enough space: ${DeviceStorage.shortfall(estimatedSize, freeBytes!)}';
+        _activeDownloads[item.id] = DownloadProgress(
+          itemId: item.id,
+          fileName: item.name,
+          error: msg,
+        );
+        _emitError('${item.name}: $msg');
+        notifyListeners();
+        return;
+      }
       final subFolder = _buildSubFolder(fullItem);
       final fileName = _buildFileName(fullItem, quality);
       late final Directory dir;

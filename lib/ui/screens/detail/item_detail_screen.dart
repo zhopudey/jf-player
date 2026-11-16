@@ -63,6 +63,8 @@ import '../../../playback/known_defects.dart';
 import '../../../syncplay/syncplay_manager.dart';
 import '../../../util/audio_labels.dart';
 import '../../../util/download_utils.dart';
+import '../../../platform/device_storage.dart';
+import '../../../data/services/storage_path_service.dart';
 import '../../../util/episode_playability.dart';
 import '../../../util/focus/dpad_keys.dart';
 import '../../../util/language_matching.dart';
@@ -9318,17 +9320,36 @@ class _DownloadButtonState extends State<_DownloadButton> {
         service.downloadItems(selected, quality: quality);
         _showDownloadStartedSnack(context, quality);
       },
+      onWontFit: () => _openDownloadPicker(context, service),
     );
   }
 
-  void _showQualitySheet(
+  Future<void> _showQualitySheet(
     BuildContext context, {
     required AggregatedItem item,
     required bool isMulti,
     required bool supportsTranscoding,
     required List<AggregatedItem> estimationItems,
     required void Function(DownloadQuality quality) onSelected,
-  }) {
+    VoidCallback? onWontFit,
+  }) async {
+    // Real free space where downloads go, so a quality that will not fit is
+    // flagged here instead of failing after it was queued.
+    int? freeBytes;
+    if (GetIt.instance.isRegistered<StoragePathService>()) {
+      final root = await GetIt.instance<StoragePathService>().getOfflineRoot();
+      freeBytes = await DeviceStorage.freeBytes(root.path);
+    }
+    if (!context.mounted) return;
+    int neededFor(DownloadQuality q) {
+      if (!isMulti) return estimateDownloadSizeBytes(item, q);
+      var total = 0;
+      for (final ep in estimationItems) {
+        total += estimateDownloadSizeBytes(ep, q);
+      }
+      return total;
+    }
+
     final sourceWidth = isMulti
         ? (() {
             int? maxWidth;
@@ -9374,32 +9395,60 @@ class _DownloadButtonState extends State<_DownloadButton> {
               ),
             ),
             ...availableQualities.map(
-              (quality) => ListTile(
-                leading: AdaptiveIcon(
-                  quality.isTranscoded
-                      ? Icons.compress
-                      : Icons.file_copy_outlined,
-                  color: Colors.white70,
-                ),
-                title: Text(
-                  quality.label,
-                  style: const TextStyle(color: Colors.white),
-                ),
-                subtitle: Text(
-                  _qualitySubtitle(
-                    item,
-                    quality,
-                    supportsTranscoding: supportsTranscoding,
-                    isMulti: isMulti,
-                    multiEstimateSubtitle: multiEstimateSubtitles[quality],
+              (quality) {
+                final needed = neededFor(quality);
+                final fits = DeviceStorage.fits(needed, freeBytes);
+                final base = _qualitySubtitle(
+                  item,
+                  quality,
+                  supportsTranscoding: supportsTranscoding,
+                  isMulti: isMulti,
+                  multiEstimateSubtitle: multiEstimateSubtitles[quality],
+                );
+                return ListTile(
+                  leading: AdaptiveIcon(
+                    quality.isTranscoded
+                        ? Icons.compress
+                        : Icons.file_copy_outlined,
+                    color: fits ? Colors.white70 : Colors.white24,
                   ),
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  onSelected(quality);
-                },
-              ),
+                  title: Text(
+                    quality.label,
+                    style: TextStyle(
+                      color: fits ? Colors.white : Colors.white38,
+                    ),
+                  ),
+                  subtitle: Text(
+                    fits
+                        ? base
+                        : "Won't fit · ${DeviceStorage.shortfall(needed, freeBytes!)}",
+                    style: TextStyle(
+                      color: fits
+                          ? Colors.white.withValues(alpha: 0.5)
+                          : const Color(0xFFFFB74D),
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    if (fits) {
+                      onSelected(quality);
+                      return;
+                    }
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          isMulti
+                              ? 'Space low for this selection. '
+                                    'Pick fewer episodes or a smaller quality.'
+                              : 'Not enough space: '
+                                    '${DeviceStorage.shortfall(needed, freeBytes!)}',
+                        ),
+                      ),
+                    );
+                    onWontFit?.call();
+                  },
+                );
+              },
             ),
             const SizedBox(height: 8),
           ],

@@ -238,6 +238,17 @@ class MainActivity : AudioServiceActivity() {
                     result.success(isTvDevice())
                 }
                 "displayHdrTypes" -> result.success(getDisplayHdrTypes())
+                "freeSpaceBytes" -> {
+                    // StatFs needs an existing path; the download folder may not
+                    // exist yet, so walk up to the nearest existing parent.
+                    var dir: java.io.File? = call.argument<String>("path")?.let { java.io.File(it) }
+                    while (dir != null && !dir.exists()) dir = dir.parentFile
+                    try {
+                        result.success(dir?.let { android.os.StatFs(it.path).availableBytes })
+                    } catch (e: Exception) {
+                        result.success(null)
+                    }
+                }
                 "dolbyVisionCodecCapabilities" -> {
                     result.success(MediaCodecCapabilities.queryDolbyVisionCapabilities())
                 }

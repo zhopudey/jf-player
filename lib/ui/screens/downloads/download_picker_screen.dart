@@ -6,6 +6,9 @@ import 'package:server_core/server_core.dart';
 
 import '../../../data/models/aggregated_item.dart';
 import '../../../data/repositories/offline_repository.dart';
+import '../../../data/services/storage_path_service.dart';
+import '../../../platform/device_storage.dart';
+import '../../../util/download_utils.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../widgets/selection/selectable_episode_list.dart';
 import '../../widgets/selection/selectable_list_controller.dart';
@@ -53,6 +56,9 @@ class _DownloadPickerScreenState extends State<DownloadPickerScreen> {
   bool _loading = true;
   bool _unwatchedOnly = false;
 
+  /// Real free space where downloads go; null when unknown (never blocks).
+  int? _freeBytes;
+
   @override
   void initState() {
     super.initState();
@@ -80,8 +86,15 @@ class _DownloadPickerScreenState extends State<DownloadPickerScreen> {
           .toSet();
     }
 
+    int? freeBytes;
+    if (GetIt.instance.isRegistered<StoragePathService>()) {
+      final root = await GetIt.instance<StoragePathService>().getOfflineRoot();
+      freeBytes = await DeviceStorage.freeBytes(root.path);
+    }
+
     if (!mounted) return;
     setState(() {
+      _freeBytes = freeBytes;
       _episodes = episodes;
       _downloadedIds = downloadedIds;
       _loading = false;
@@ -175,6 +188,48 @@ class _DownloadPickerScreenState extends State<DownloadPickerScreen> {
     );
   }
 
+  /// Original-file size of the current selection. Transcoded downloads are
+  /// smaller, so this is the upper bound the quality sheet refines.
+  int get _selectedBytes {
+    final selected = _controller.selectedIds;
+    var total = 0;
+    for (final ep in _episodes) {
+      if (selected.contains(ep.id)) total += sourceSizeBytes(ep);
+    }
+    return total;
+  }
+
+  /// "≈ 31.2 GB selected · 58.0 GB free", turning into a warning when the
+  /// selection (as originals) will not fit, so episodes can be unticked here.
+  Widget _spaceStrip() {
+    final free = _freeBytes;
+    final needed = _selectedBytes;
+    if (free == null && needed <= 0) return const SizedBox.shrink();
+    final fits = DeviceStorage.fits(needed, free);
+    final parts = <String>[
+      if (needed > 0) '≈ ${formatBytes(needed)} selected',
+      if (free != null) '${formatBytes(free)} free',
+    ];
+    final text = fits
+        ? parts.join(' · ')
+        : 'Space low for full selection — untick some episodes '
+              '(${parts.join(' · ')})';
+    return Container(
+      width: double.infinity,
+      color: fits ? Colors.transparent : const Color(0x33FF9800),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: fits
+              ? AppColorScheme.onSurface.withValues(alpha: 0.6)
+              : const Color(0xFFFFB74D),
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -226,11 +281,20 @@ class _DownloadPickerScreenState extends State<DownloadPickerScreen> {
             ),
       bottomNavigationBar: _loading || _episodes.isEmpty
           ? null
-          : SelectionActionBar(
-              controller: _controller,
-              icon: Icons.download,
-              label: l10n.download,
-              onConfirm: _confirm,
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListenableBuilder(
+                  listenable: _controller,
+                  builder: (context, _) => _spaceStrip(),
+                ),
+                SelectionActionBar(
+                  controller: _controller,
+                  icon: Icons.download,
+                  label: l10n.download,
+                  onConfirm: _confirm,
+                ),
+              ],
             ),
     );
   }
