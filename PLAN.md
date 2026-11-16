@@ -14,9 +14,8 @@ into a separate list.
       installed app already uses (cert SHA-256 `2372fadb…0b662c`, checked against the Aug 2026
       APK). The key is backed up off the build box. Passwords are kept in the lab's private
       secrets store, never in this repo. *(2026-11-16)*
-- [ ] **0.3 Build checkout clean.** Done = the build box's checkout is on `origin/main` with no
-      stray changes. Today it is 2 commits behind; 6 of its 7 dirty files already match origin,
-      and the 7th is a generated l10n file. Two old stashes from August 2026 need a keep/drop decision.
+- [x] **0.3 Build checkout clean.** Done = the build box's checkout is on `origin/main` with no
+      stray changes. *(2026-11-16; the two Aug 2026 stashes are kept, not dropped.)*
 - [ ] **0.4 A release APK installs over the existing app on the tab.** Done = the tab updates in
       place and its downloads are still there afterwards. This proves 0.2 end to end.
 
@@ -49,11 +48,15 @@ into a separate list.
 Design: a Jellyfin **playlist** ("Offline") is the shared list. Each device downloads whatever
 is on it and missing locally, **from the server**, never device-to-device. Items can be added
 from either device or from Jellyfin web.
-- [ ] **4.1 Decisions (Rohan):** (a) mirror deletes, or additions only? (proposed: additions
-      only) (b) everything on both devices, or per-item "both"? (c) series: the whole show or the
-      next N unwatched episodes?
+- [x] **4.1 Decisions (Rohan, 2026-11-16):** (a) deletes are **not** mirrored; sync only adds.
+      (b+c) when a season won't fit, the app says so ("Space low for full season") and the user
+      **selects which episodes** to download. No automatic rule.
 - [ ] **4.2 Sync on app open.** Done = add an item on the phone, open the app on the tab, and the
-      item downloads there. Honours 2.2 (stops at what fits — the tab is the smaller device).
+      item downloads there. If it won't fit (2.2), the app asks with the episode picker (4.5) instead of
+      silently skipping.
+- [ ] **4.5 Episode picker when space is low.** Done = queueing a season that exceeds free space
+      shows "Space low for full season — select episodes", with a running total vs free space,
+      and only the ticked episodes are queued. Used by manual downloads and by sync. Needs 2.1.
 - [ ] **4.3 Per-device quality.** Done = each device can pick original or a transcode for synced items.
 - [ ] **4.4 Background sync (optional).** Done = sync runs on Wi-Fi + charging without opening
       the app. A sleeping tab in Doze still won't react instantly; the ntfy wake idea
