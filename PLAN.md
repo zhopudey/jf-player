@@ -40,10 +40,14 @@ and progress push/pull (`SyncService`). Verified by 0.5.
       library pages with only downloaded titles playable. Done = decision recorded here.
 
 ## 1. Install without ADB
-- [ ] **1.1 Publish APKs to a fixed URL.** Done = every release build lands where the phone can
-      fetch it (a GitHub release or the projects share).
+- [x] **1.1 Publish APKs to a fixed URL.** Done = the build is a GitHub release on this repo
+      (Rohan chose GitHub Releases over the share on 2026-11-16). First one: `v2.2.0-30000140`.
+      Flavor `mobile-beta` (`org.moonfin.androidtv.beta`). Each release needs a higher
+      `--build-number` than the last, or Android refuses the update.
+- [ ] **1.3 One-command release script on the build box.** Done = a script builds, bumps the build
+      number, checks the signing cert, and publishes the release, so a new build needs no Claude.
 - [ ] **1.2 Obtainium tracks it.** Done = phone and tab both get an update prompt for a new
-      build without Developer options.
+      build without Developer options. Setup: Obtainium → Add app → `https://github.com/zhopudey/jf-player`.
 
 ## 2. Free space before downloading
 - [ ] **2.1 Read real device free space** (Android `StatFs` on the download root). Done = the
