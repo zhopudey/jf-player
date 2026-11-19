@@ -133,7 +133,10 @@ app is tied to the box serial, so we call it and do not copy it.
 but forum reports say HDR10+ plays as HDR10 and DTS-HD MA/DTS:X are not passed through. Reopen only if the
 Dune app hand-off fails (7.3) AND a CoreELEC SD-boot test passes HDR10+, TrueHD Atmos, DTS:X, 24p.
 Sources are forum posts, not release notes.
-**Blocked until the box is connected.** Needs its IP and adb debugging over the network.
+**Box is at `10.0.10.136:5555`** (adb from flutterdev `.37`, `~/Android/Sdk/platform-tools/adb`; probe results in
+`~/dune-probe.txt` there). It is currently plugged into Rohan's 4K PC monitor (fake HDR), so ignore its HDR/display
+readings. Quality tests (7.3, any CoreELEC trial) only count on the living-room TV + Denon.
+**Blocked on:** someone accepting the adb prompt on the monitor.
 
 - [ ] **7.1 Reach the box.** Done = `adb devices` lists it. Record IP in ACCESS.md; record Android TV
       version and `getprop ro.board.platform`.
