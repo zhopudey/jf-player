@@ -123,3 +123,34 @@ Do not merge 4,281 commits into the old fork.
       covered by upstream, still wanted, or dropped (with Rohan).
 - [ ] **6.7 Spec items not done yet:** quality pill (spec §1) and auto Media3 for HDR (spec §2).
       Upstream has neither. Done = Rohan decides whether they come into the plan.
+
+## 7. Dune-grade playback on the Dune Homatics Box R 4K Plus (opened 2026-11-19)
+**Goal:** on the box (Amlogic S905X4), Jellyfin browsing stays pretty (Moonfin) and playback is the
+Dune app's, which Rohan tested earlier and plays everything (HDR10+, DV, TrueHD/Atmos, DTS:X, 24p).
+**Why not decode in Moonfin:** Android's MediaCodec path cannot match the Dune pipeline. The Dune
+app is tied to the box serial, so we call it and do not copy it.
+**Why not CoreELEC (decided 2026-11-19):** supported for this box (`sc2_s905x4_sei_smb_280.dtb`)
+but forum reports say HDR10+ plays as HDR10 and DTS-HD MA/DTS:X are not passed through. Reopen only if the
+Dune app hand-off fails (7.3) AND a CoreELEC SD-boot test passes HDR10+, TrueHD Atmos, DTS:X, 24p.
+Sources are forum posts, not release notes.
+**Blocked until the box is connected.** Needs its IP and adb debugging over the network.
+
+- [ ] **7.1 Reach the box.** Done = `adb devices` lists it. Record IP in ACCESS.md; record Android TV
+      version and `getprop ro.board.platform`.
+- [ ] **7.2 Find the Dune app.** Done = package name and its intent filters (`pm list packages | grep -i dune`,
+      `dumpsys package <pkg>`) written here.
+- [ ] **7.3 Hand-off test.** `adb shell am start -a android.intent.action.VIEW -d <jellyfin direct URL> -t video/*`
+      with a known DV/HDR10+/Atmos file. Done = Dune plays it with the right HDR/DV/audio mode on the Denon
+      and 24p on the TV, or we know why not.
+- [ ] **7.4 If 7.3 fails: share-path fallback.** Dune plays from SMB/NFS. Done = Moonfin maps a Jellyfin item to its
+      share path and Dune plays it from there, or this is judged too fragile.
+- [ ] **7.5 Moonfin "Play with Dune" action** (setting + button on the play screen, shown only where the Dune
+      package is installed). Done = pressing it on the box starts Dune on that item, with a visible "Opening
+      Dune…" state (operator rule: every UI says "I ain't dead").
+- [ ] **7.6 Resume position.** Pass the Jellyfin resume offset if Dune accepts one. Done = resuming an item starts
+      at the saved position, or we record that Dune can't.
+- [ ] **7.7 Watched/progress sync back to Jellyfin.** Dune plays outside Moonfin, so Jellyfin doesn't know.
+      Options to test: Dune returns a result with position on exit; otherwise a "Mark watched" button or
+      a prompt on return. Done = an item played through Dune shows correct watched state in Jellyfin.
+- [ ] **7.8 Decide with Rohan** what the default Play action is on the box (Dune vs in-app) and whether
+      subtitles/audio-track choice carry across. Done = recorded here.
