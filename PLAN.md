@@ -185,10 +185,10 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       TV and Denon powered on before the box (guide: avoids a distorted picture at boot). Done = Rohan confirms.
 - [x] **8.4 Flash and prepare the stick — DONE 2026-11-20** on spotipi (`/dev/sda`, SanDisk 3.2 Gen1 16 GB; it held a Proxmox VE installer, now overwritten). Image checksums verified on the stick, `dtb.img` is byte-identical to `sc2_s905x4_sei_smb_280.dtb`. ⚠️ The stick wrote at only ~5 MB/s, so expect a slow first boot; the guide recommends a fast stick. Original text:  Flash the `.img.gz` (Etcher accepts it as is). Open the `COREELEC` partition,
       copy `device_trees/sc2_s905x4_sei_smb_280.dtb` to the root, rename it **`dtb.img`**. Done = stick has `dtb.img` at root.
-- [ ] **8.5 Boot into CoreELEC.** Stick in the blue USB 3 port. Then either `adb reboot update` from flutterdev
+- [x] **8.5 Boot into CoreELEC — DONE 2026-11-20** (Rohan booted it himself; CoreELEC 21.3-Omega, Wi-Fi works on 5 GHz). Original text:  Stick in the blue USB 3 port. Then either `adb reboot update` from flutterdev
       (`10.0.10.146:5555`) or the reset-button method (unplug power, hold reset, power on, keep holding until the CoreELEC
       boot screen). First boot can look frozen for 2+ minutes. Done = Kodi home screen.
-- [ ] **8.6 Basics.** Wi-Fi on the 5 GHz SSID (or ethernet), Bluetooth remote paired (Back + Home held), SSH on with
+- [x] **8.6 Basics — DONE.** Wi-Fi 5 GHz, SSH works (`root`, see 8.8). Bluetooth remote not tested. Original text:  Wi-Fi on the 5 GHz SSID (or ethernet), Bluetooth remote paired (Back + Home held), SSH on with
       a changed password. Done = `ssh root@<ip>` works and `ping` is fine.
 - [ ] **8.7 Playback matrix on the living-room TV + Denon.** Play each title below; for each write PASS/FAIL and
       what the Denon and TV show (DV or HDR10+ badge, Dolby Atmos/TrueHD/DTS-HD MA readout, TV Hz). Done = the table
@@ -205,8 +205,22 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       | DTS-HD MA + DV P8 | No Country for Old Men (2007) | 47.2 GB |
       | **DTS:X** | none in the library (Jellyfin shows only DTS-HD MA) — Rohan to name one or skip | |
       | FEL, info only | Dune: Part Two (2024) (DV profile 7 with EL) | 69 GB |
-- [ ] **8.8 Jellyfin on CoreELEC.** Jellyfin for Kodi in **add-on mode** (not native), Kodi Sync Queue plugin on the server.
-      Done = library shows, a film marked watched in Kodi shows watched in Jellyfin and the reverse, resume position carries.
+- [~] **8.8 Jellyfin on CoreELEC — WORKING on the Acer (2026-11-20), TV re-test pending.** Jellyfin for Kodi 2.2.0 in add-on mode,
+      signed in as `rohan` on `10.0.10.40:8096`, **only `movies-english` synced** (250 movies, 18 s). Skin: Arctic Zephyr Mod 3.0.3.
+      Tested: Infinity War plays 4K HEVC, output switched to **3840x2160 @ 23.98 Hz** by itself, Kodi reports `dolbyvision`
+      (the Acer has no DV, so no real DV check), server shows no transcode. **Watched sync both ways works**: Kodi to Jellyfin
+      (stop at 10:00 gave a 609 s resume point; needs a stop past ~5% or Jellyfin ignores it) and Jellyfin to Kodi (mark
+      unplayed, Kodi followed in 12 s). The test overwrote Infinity War's play history; restored exactly (4 plays, 2026-10-10).
+      Still open: sync the other 7 libraries (movies-hindi/animated/others, TV-*), Kodi Sync Queue plugin on the server (not
+      installed; live updates worked without it for watched state), and the playback matrix on the TV (8.7).
+      **Gotchas hit:** (1) the official repo zip points at a dead URL, so the add-on was installed by hand from
+      `repo.jellyfin.org/releases/client/kodi/py3/plugin.video.jellyfin/` (md5 checked), deps from Kodi's repo;
+      (2) Arctic Zephyr's menu builder failed until `ln -s 1080i xml` inside `/storage/.kodi/addons/skin.arctic.zephyr.mod/`;
+      (3) Kodi reverts a skin change unless "keep?" is answered within ~10 s.
+      **Box access (CoreELEC):** `ssh root@10.0.10.146` (password has a trailing `!`: `me2go4it!`), flutterdev's key is installed.
+      Kodi remote API on `:8080`, user `kodi`, same password. Backup of the original `guisettings.xml` in `/storage/backup-pre-jf/`.
+      **Before the TV test:** audio passthrough is OFF in Kodi (`audiooutput.passthrough` false) and must be turned on, with
+      the Dolby/DTS capability boxes, or the Denon will get PCM. Refresh-rate switching is already on.
 - [ ] **8.9 Decide with Rohan.** CoreELEC only, Dune hand-off (§7) only, or both (CoreELEC for movies, Dune app as
       a switch-back). Done = decision recorded here and §7 closed or reopened.
 - [ ] **8.10 Back to Android.** Remove the stick and power-cycle (or "reboot to emmc" from the power menu). The guide has no
