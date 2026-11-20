@@ -129,10 +129,12 @@ Do not merge 4,281 commits into the old fork.
 Dune app's, which Rohan tested earlier and plays everything (HDR10+, DV, TrueHD/Atmos, DTS:X, 24p).
 **Why not decode in Moonfin:** Android's MediaCodec path cannot match the Dune pipeline. The Dune
 app is tied to the box serial, so we call it and do not copy it.
-**Why not CoreELEC (decided 2026-11-19):** supported for this box (`sc2_s905x4_sei_smb_280.dtb`)
-but forum reports say HDR10+ plays as HDR10 and DTS-HD MA/DTS:X are not passed through. Reopen only if the
-Dune app hand-off fails (7.3) AND a CoreELEC SD-boot test passes HDR10+, TrueHD Atmos, DTS:X, 24p.
-Sources are forum posts, not release notes.
+**CoreELEC (superseded 2026-11-20):** Rohan decided to try CoreELEC first, as §8. The earlier "rejected" note rested on
+forum reports (HDR10+ plays as HDR10, no DTS-HD MA/DTS:X bitstream) that nobody has tested on this box; Rohan believes
+HDR10+ works and audio passes through. §8 settles it by test. §7 below is the fallback and stays open.
+**§7 STATUS 2026-11-20 — PAUSED behind §8.** Done: box reachable, Dune package + intents known, hand-off launch works.
+Answered (negative): Dune ignores position extras and keeps its own resume menu (7.6). Open: watched sync (7.7),
+the Moonfin button (7.5), and quality on the living-room TV (7.3).
 **Box is at `10.0.10.146:5555`** (was .136 on 2026-11-19; DHCP moved it, so pin a reservation) (adb from flutterdev `.37`, `~/Android/Sdk/platform-tools/adb`; probe output in
 `~/dune-probe.txt` there). It is currently plugged into Rohan's 4K PC monitor (fake HDR), so ignore its HDR/display
 readings. Quality tests (7.3, any CoreELEC trial) only count on the living-room TV + Denon.
@@ -154,10 +156,60 @@ ships and CoreELEC is no longer in play.
 - [ ] **7.5 Moonfin "Play with Dune" action** (setting + button on the play screen, shown only where the Dune
       package is installed). Done = pressing it on the box starts Dune on that item, with a visible "Opening
       Dune…" state (operator rule: every UI says "I ain't dead").
-- [ ] **7.6 Resume position.** Pass the Jellyfin resume offset if Dune accepts one. Done = resuming an item starts
+- [x] **7.6 Resume position — ANSWERED: not possible.** 2026-11-20: `position`/`start_position` extras ignored; Dune shows its own "resume from 0:59 / from beginning" menu (needs a remote press, keeps its own position per file URL). Pass the Jellyfin resume offset if Dune accepts one. Done = resuming an item starts
       at the saved position, or we record that Dune can't.
 - [ ] **7.7 Watched/progress sync back to Jellyfin.** Dune plays outside Moonfin, so Jellyfin doesn't know.
       Options to test: Dune returns a result with position on exit; otherwise a "Mark watched" button or
       a prompt on return. Done = an item played through Dune shows correct watched state in Jellyfin.
 - [ ] **7.8 Decide with Rohan** what the default Play action is on the box (Dune vs in-app) and whether
       subtitles/audio-track choice carry across. Done = recorded here.
+
+## 8. CoreELEC trial on the Box R 4K Plus (opened 2026-11-20)
+**Goal:** find out whether CoreELEC + Jellyfin for Kodi gives Dune-grade playback on this box: DV, HDR10+, TrueHD/Atmos,
+DTS-HD/DTS:X passthrough, 24p, with Jellyfin watched sync. FEL is not required (Rohan, 2026-11-19).
+**Why it is safe:** it boots from a USB stick and leaves the Android install (and the Dune app) on internal storage.
+**Where the steps come from:** CoreELEC wiki `coreelec:homatics`, and the community guide thread 28659 (edited 2023,
+so treat details as dated). The old `Amlogic-ne` folder is gone from relkai; the stable NE image is on GitHub releases.
+**Facts checked 2026-11-20:** latest stable NE image = **21.3-Omega** (2025-11-04). Device tree `sc2_s905x4_sei_smb_280.dtb`
+is inside the image (read from its FAT partition). The box is on Android 12 build 7954, newer than the guide's v5310
+floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
+
+- [x] **8.1 Files ready.** Image `CoreELEC-Amlogic-ne.aarch64-21.3-Omega-Generic.img.gz` (247 MB), sha256
+      `6e5ef07bfad1fa85b9f30f440db1f80b0cdb9549960dbfa4688301947906a4b4`, in the share at
+      `/mnt/user/projects/jf-player/coreelec/` (copyparty `/projects/jf-player/coreelec`) with `SHA256SUM` and a
+      step sheet `README.md`. Done = checksum verified on the share (it was, 2026-11-20).
+- [ ] **8.2 Hardware ready.** Rohan has a fast USB 3 stick or SSD (the guide recommends Samsung FIT Plus; some sticks and
+      USB-SATA adapters fail on this box), a flasher (balenaEtcher, Windows or Mac), and a toothpick for the reset pin.
+      Done = Rohan confirms what he has.
+- [ ] **8.3 Pre-flight on Android.** Turn Dolby Vision on in Android once (guide). Box on the living-room TV + Denon,
+      TV and Denon powered on before the box (guide: avoids a distorted picture at boot). Done = Rohan confirms.
+- [ ] **8.4 Flash and prepare the stick.** Flash the `.img.gz` (Etcher accepts it as is). Open the `COREELEC` partition,
+      copy `device_trees/sc2_s905x4_sei_smb_280.dtb` to the root, rename it **`dtb.img`**. Done = stick has `dtb.img` at root.
+- [ ] **8.5 Boot into CoreELEC.** Stick in the blue USB 3 port. Then either `adb reboot update` from flutterdev
+      (`10.0.10.146:5555`) or the reset-button method (unplug power, hold reset, power on, keep holding until the CoreELEC
+      boot screen). First boot can look frozen for 2+ minutes. Done = Kodi home screen.
+- [ ] **8.6 Basics.** Wi-Fi on the 5 GHz SSID (or ethernet), Bluetooth remote paired (Back + Home held), SSH on with
+      a changed password. Done = `ssh root@<ip>` works and `ping` is fine.
+- [ ] **8.7 Playback matrix on the living-room TV + Denon.** Play each title below; for each write PASS/FAIL and
+      what the Denon and TV show (DV or HDR10+ badge, Dolby Atmos/TrueHD/DTS-HD MA readout, TV Hz). Done = the table
+      is filled in here. Titles (all on disk, all 23.976 fps, from Sanchalak + Jellyfin 2026-11-20):
+      | test | title | file |
+      |---|---|---|
+      | DV P8 + DD+ 7.1 (reference, plays in Dune) | Avengers: Infinity War (2018) | 21.2 GB |
+      | DV P8, smallest 4K | Spider-Man: Into the Spider-Verse (2018) | 11.3 GB |
+      | DV P8 + **TrueHD Atmos** | Spider-Man: Across the Spider-Verse (2023) | 34.1 GB |
+      | DV + **HDR10+** + **TrueHD Atmos** (+ DD+ Atmos track) | Guardians of the Galaxy Vol. 3 (2023) | 34.5 GB |
+      | **HDR10+** only (no DV) | Alien (1979) 20.5 GB, or Die Hard (1988) 6.4 GB | |
+      | DV + HDR10+ + **DD+ Atmos** | Iron Man (2008) | 13.8 GB |
+      | **DTS-HD MA** + HDR10+ | Predator (1987) | 23.5 GB |
+      | DTS-HD MA + DV P8 | No Country for Old Men (2007) | 47.2 GB |
+      | **DTS:X** | none in the library (Jellyfin shows only DTS-HD MA) — Rohan to name one or skip | |
+      | FEL, info only | Dune: Part Two (2024) (DV profile 7 with EL) | 69 GB |
+- [ ] **8.8 Jellyfin on CoreELEC.** Jellyfin for Kodi in **add-on mode** (not native), Kodi Sync Queue plugin on the server.
+      Done = library shows, a film marked watched in Kodi shows watched in Jellyfin and the reverse, resume position carries.
+- [ ] **8.9 Decide with Rohan.** CoreELEC only, Dune hand-off (§7) only, or both (CoreELEC for movies, Dune app as
+      a switch-back). Done = decision recorded here and §7 closed or reopened.
+- [ ] **8.10 Back to Android.** Remove the stick and power-cycle (or "reboot to emmc" from the power menu). The guide has no
+      explicit revert text, so this is unconfirmed until tried. Done = Android and the Dune app come up with the stick out.
+**Risks noted:** the bootloader is locked and verified, so no eMMC install, USB boot only. Android 14 firmware would change
+the picture (do not update). A CoreELEC-then-Android round trip can leave the LED glitching (guide).
