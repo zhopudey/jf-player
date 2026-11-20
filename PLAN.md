@@ -227,3 +227,24 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       explicit revert text, so this is unconfirmed until tried. Done = Android and the Dune app come up with the stick out.
 **Risks noted:** the bootloader is locked and verified, so no eMMC install, USB boot only. Android 14 firmware would change
 the picture (do not update). A CoreELEC-then-Android round trip can leave the LED glitching (guide).
+
+## 9. Favourite scenes page in Kodi (opened 2026-11-20)
+**Goal:** a "Favourite scenes" entry on the Kodi home screen. Cards with thumbnail, title, short description. Press one and the
+scene plays from its start time and **stops at its end time** (YouTube-style: it ends, it does not roll on into the film) and
+returns to the page. Rohan never hand-hunts timestamps. Jellyfin play state does not matter (Rohan, 2026-11-20).
+**Depends on:** §8 (CoreELEC booted, Jellyfin for Kodi). Sources for the scene list: taste-map notes (`/mnt/user/projects/taste/1_distilled`,
+his "scene-jump" picks and his own scene descriptions), `rewatch` page "Scenes" taps.
+- [ ] **9.1 Scene data file.** One file in this repo: film (Jellyfin item), start, end, category, title, description.
+      Done = file exists with ≥6 scenes across comedy / thrill / song / emotional, each with a start AND an end time.
+- [ ] **9.2 Timestamp finder (no hand-hunting).** Script: dialogue scenes matched against the film's subtitles (ffmpeg extract);
+      silent/visual and song scenes by sampling a frame every ~5 s and picking with a vision model (local minicpm on Rudra first).
+      Output = candidate start/end + thumbnail per scene for Rohan to glance at. Done = 5 test scenes get a correct start AND end
+      without Rohan typing a time. Known risk: subtitle times drift between encodes, so check against the copy on the shelf.
+- [ ] **9.3 Seek + stop spike on the box.** Prove Kodi can start an item at T and stop at E (JSON-RPC `Player.Seek` or add-on
+      `seekTime`, plus a watcher that stops at E). Done = on the Acer (then the TV), a test scene starts within ~1 s of T, stops
+      within ~1 s of E, and the UI returns to the page, not the film.
+- [ ] **9.4 Test on a few scenes, one per mood** (comedy, thriller, song, emotional). Done = Rohan says which of start/end
+      accuracy, thumbnail and description actually matter to him.
+- [ ] **9.5 Design the page** from what 9.4 teaches (grouping by mood? random scene? description length?). Done = layout agreed with Rohan before any code.
+- [ ] **9.6 Kodi add-on.** Home-screen entry, the page, play-and-stop, "I ain't dead" state while it seeks. Done = on the box, one remote press from home plays a scene to its end and returns.
+- [ ] **9.7 One-line add.** "Add <scene> from <film>" runs 9.2 and appends to 9.1. Done = a new scene appears on the page without Rohan editing a file.
