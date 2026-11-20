@@ -178,12 +178,12 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       `6e5ef07bfad1fa85b9f30f440db1f80b0cdb9549960dbfa4688301947906a4b4`, in the share at
       `/mnt/user/projects/jf-player/coreelec/` (copyparty `/projects/jf-player/coreelec`) with `SHA256SUM` and a
       step sheet `README.md`. Done = checksum verified on the share (it was, 2026-11-20).
-- [ ] **8.2 Hardware ready.** Rohan has a fast USB 3 stick or SSD (the guide recommends Samsung FIT Plus; some sticks and
+- [~] **8.2 Hardware ready.** Stick: the 16 GB SanDisk (slow, ~5 MB/s write). Still to confirm: flasher not needed (done on spotipi), toothpick for the reset pin, TV/Denon access. Original text:  Rohan has a fast USB 3 stick or SSD (the guide recommends Samsung FIT Plus; some sticks and
       USB-SATA adapters fail on this box), a flasher (balenaEtcher, Windows or Mac), and a toothpick for the reset pin.
       Done = Rohan confirms what he has.
 - [ ] **8.3 Pre-flight on Android.** Turn Dolby Vision on in Android once (guide). Box on the living-room TV + Denon,
       TV and Denon powered on before the box (guide: avoids a distorted picture at boot). Done = Rohan confirms.
-- [ ] **8.4 Flash and prepare the stick.** Flash the `.img.gz` (Etcher accepts it as is). Open the `COREELEC` partition,
+- [x] **8.4 Flash and prepare the stick — DONE 2026-11-20** on spotipi (`/dev/sda`, SanDisk 3.2 Gen1 16 GB; it held a Proxmox VE installer, now overwritten). Image checksums verified on the stick, `dtb.img` is byte-identical to `sc2_s905x4_sei_smb_280.dtb`. ⚠️ The stick wrote at only ~5 MB/s, so expect a slow first boot; the guide recommends a fast stick. Original text:  Flash the `.img.gz` (Etcher accepts it as is). Open the `COREELEC` partition,
       copy `device_trees/sc2_s905x4_sei_smb_280.dtb` to the root, rename it **`dtb.img`**. Done = stick has `dtb.img` at root.
 - [ ] **8.5 Boot into CoreELEC.** Stick in the blue USB 3 port. Then either `adb reboot update` from flutterdev
       (`10.0.10.146:5555`) or the reset-button method (unplug power, hold reset, power on, keep holding until the CoreELEC
