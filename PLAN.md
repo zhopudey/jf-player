@@ -133,16 +133,20 @@ app is tied to the box serial, so we call it and do not copy it.
 but forum reports say HDR10+ plays as HDR10 and DTS-HD MA/DTS:X are not passed through. Reopen only if the
 Dune app hand-off fails (7.3) AND a CoreELEC SD-boot test passes HDR10+, TrueHD Atmos, DTS:X, 24p.
 Sources are forum posts, not release notes.
-**Box is at `10.0.10.136:5555`** (adb from flutterdev `.37`, `~/Android/Sdk/platform-tools/adb`; probe results in
+**Box is at `10.0.10.146:5555`** (was .136 on 2026-11-19; DHCP moved it, so pin a reservation) (adb from flutterdev `.37`, `~/Android/Sdk/platform-tools/adb`; probe output in
 `~/dune-probe.txt` there). It is currently plugged into Rohan's 4K PC monitor (fake HDR), so ignore its HDR/display
 readings. Quality tests (7.3, any CoreELEC trial) only count on the living-room TV + Denon.
-**Blocked on:** someone accepting the adb prompt on the monitor.
+**Box facts (2026-11-19/20):** SEI Robotics Box R 4K Plus, Android 12, build 7954, Amlogic decoder (log:
+`AmlogicVideoDecoderAwesome2`). Dune app `com.dunehd.app` 1.0.1, accepts VIEW for http/https/smb/nfs/file/content.
+**Stays on build 7954 on purpose.** An update to Android 14 (likely v14.8.8963) cannot be rolled back and CoreELEC
+needs a different branch there. `settings global ota_disable_automatic_update=1` is set. Revisit only if a needed fix
+ships and CoreELEC is no longer in play.
 
-- [ ] **7.1 Reach the box.** Done = `adb devices` lists it. Record IP in ACCESS.md; record Android TV
+- [x] **7.1 Reach the box.** Done = `adb devices` lists it. Record IP in ACCESS.md; record Android TV
       version and `getprop ro.board.platform`.
-- [ ] **7.2 Find the Dune app.** Done = package name and its intent filters (`pm list packages | grep -i dune`,
+- [x] **7.2 Find the Dune app.** Done = package name and its intent filters (`pm list packages | grep -i dune`,
       `dumpsys package <pkg>`) written here.
-- [ ] **7.3 Hand-off test.** `adb shell am start -a android.intent.action.VIEW -d <jellyfin direct URL> -t video/*`
+- [~] **7.3 Hand-off test.** 2026-11-20: Infinity War (4K HEVC DV 8.6, DD+ 7.1) from a stream URL started and plays in Dune on the monitor (`am start ... -p com.dunehd.app`). Still open: HDR/DV/audio mode and 24p, which only count on the living-room TV + Denon. `adb shell am start -a android.intent.action.VIEW -d <jellyfin direct URL> -t video/*`
       with a known DV/HDR10+/Atmos file. Done = Dune plays it with the right HDR/DV/audio mode on the Denon
       and 24p on the TV, or we know why not.
 - [ ] **7.4 If 7.3 fails: share-path fallback.** Dune plays from SMB/NFS. Done = Moonfin maps a Jellyfin item to its
