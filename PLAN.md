@@ -236,10 +236,12 @@ returns to the page. Rohan never hand-hunts timestamps. Jellyfin play state does
 his "scene-jump" picks and his own scene descriptions), `rewatch` page "Scenes" taps.
 - [ ] **9.1 Scene data file.** One file in this repo: film (Jellyfin item), start, end, category, title, description.
       Done = file exists with ≥6 scenes across comedy / thrill / song / emotional, each with a start AND an end time.
-- [ ] **9.2 Timestamp finder (no hand-hunting).** Script: dialogue scenes matched against the film's subtitles (ffmpeg extract);
-      silent/visual and song scenes by sampling a frame every ~5 s and picking with a vision model (local minicpm on Rudra first).
-      Output = candidate start/end + thumbnail per scene for Rohan to glance at. Done = 5 test scenes get a correct start AND end
-      without Rohan typing a time. Known risk: subtitle times drift between encodes, so check against the copy on the shelf.
+- [ ] **9.2 Timestamp finder (no hand-hunting) — subtitles first (Rohan, 2026-11-20: more reliable).** Script matches a quote or
+      description against the film's subtitles (embedded or external, via ffmpeg) and returns candidate start/end + a thumbnail
+      per scene for Rohan to glance at. Only if a scene has no usable dialogue: local Whisper transcript, then (last resort)
+      frame sampling. No vision model or face matching is set up unless a scene proves it necessary. Done = 5 test scenes get a
+      correct start AND end without Rohan typing a time. Known risk: subtitle times drift between encodes, so check against
+      the copy on the shelf (the thumbnail makes a bad match visible).
 - [ ] **9.3 Seek + stop spike on the box.** Prove Kodi can start an item at T and stop at E (JSON-RPC `Player.Seek` or add-on
       `seekTime`, plus a watcher that stops at E). Done = on the Acer (then the TV), a test scene starts within ~1 s of T, stops
       within ~1 s of E, and the UI returns to the page, not the film.
