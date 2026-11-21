@@ -43,7 +43,7 @@ class SceneMark {
     'tmdbId': tmdbId,
     'positionMs': positionMs,
     'type': type.name,
-    'markedAt': createdAt.toIso8601String(),
+    'markedAt': createdAt.toUtc().toIso8601String(),
     'note': note,
     'synced': synced,
   };
