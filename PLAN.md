@@ -221,7 +221,18 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       Kodi remote API on `:8080`, user `kodi`, same password. Backup of the original `guisettings.xml` in `/storage/backup-pre-jf/`.
       **Before the TV test:** audio passthrough is OFF in Kodi (`audiooutput.passthrough` false) and must be turned on, with
       the Dolby/DTS capability boxes, or the Denon will get PCM. Refresh-rate switching is already on.
-- [ ] **8.9 Decide with Rohan.** CoreELEC only, Dune hand-off (§7) only, or both (CoreELEC for movies, Dune app as
+**2026-11-22 (IST), first living-room session — findings, all measured:**
+- **Denon HDMI input 5 shows no signal from the box; input 3 works.** The box is on input 3, which the Denon auto-renamed "CoreELEC" (HA still calls it "Blu-ray"; the HA CoreELEC button selects it).
+- **Passthrough ON, HDMI device** (it was on S/PDIF, which only carries AC3/DTS core). Denon reported "Dolby Atmos - TrueHD", 4K24, Dolby Vision on Spider-Man: No Way Home. Refresh matching works (3840x2160 @ 23.98).
+- **OPEN: the overlay layer is not scaled up at 4K output.** At 4K24 the subtitles sit at about half size in the top-left quarter (photo + Kodi screenshot disagree). Setting the Kodi GUI to 3840x2160 put the whole interface in the top-left quarter, so it was reverted to 1920x1080 (option 28). Does not affect 1080p60 menus.
+  **Researched 2026-11-22: this is a known CoreELEC 21.3-Omega regression on the Homatics Box R 4K Plus.** Forum (discourse.coreelec.org): thread 57707 post 18 (aka, 9 Nov 2025: "21.2 behaves fine; 21.3, upgraded or clean, leaves the UI in a quarter of the screen at 4K"); thread 55688 (WeLikeChasen: GUI at 1080p still goes top-left once 4K plays; "downgraded to the latest stable CoreELEC 21 and it's working"); thread 55970 (Portisch blames calibration values in guisettings.xml and points to CE-NO; deleting guisettings.xml did not help the reporter). No staff fix or fixed release found. **Candidate fix to test: go back to CoreELEC 21.2-Omega** (reflash the stick, or a manual `.tar` update; downgrade-in-place is unverified). Kodi settings tried and ruled out: subtitle align, override styles, vertical shift, GUI 4K.
+- **OPEN: Bluetooth remote "B25"** bonds in bluez but bluez's HID layer fails ("input-hog profile accept failed"), so no input device; no IR key events reach the box either. A 2.4 GHz USB keyboard works.
+- Kodi web/remote enabled on :8080 (user `kodi`). Toggling `services.esallinterfaces` crashed Kodi once (segfault): do not toggle it.
+- **Not yet answered: judder** (output matches 23.976, no dropped-frame evidence). Playback matrix 8.7 still not run.
+- Main menu: Music and Pictures removed (backup `mainmenu.DATA.xml.orig-2026-11-22` in the skin's `shortcuts/`).
+- HA now has a Sofa dashboard (`/dash-sofa`) with Denon controls, signal info and a Kodi remote; Redmi Pad is the sofa tablet.
+- [~] **8.11 CoreELEC 21.2-Omega stick (2026-11-22, opened to test the 21.3 quarter-screen overlay regression).** Second stick = the 64 GB SanDisk 3.2 Gen1 (its old Mac data, 16 GB `SeedVR2`, was wiped on Rohan's OK). Flashed on vaikuntha (`/dev/sdg`) from `CoreELEC-Amlogic-ne.aarch64-21.2-Omega-Generic.img.gz` (sha256 `7e663594ac472f1f15d88e38d5f58bad8443b730781a7c83068ba28358c85491`, gzip test ok, GitHub gave no digest; copy in the share at `coreelec-21.2/`). `dtb.img` = `sc2_s905x4_sei_smb_280.dtb` (cmp ok). STORAGE grown to the full stick and pre-loaded with the 21.3 box's `/storage` (`.kodi`, `.config`, `.ssh`, the rest; excluding `.cache`, `.update`, `screenshots`), so Jellyfin add-on, skin, passthrough and Wi-Fi come with it. The 21.3 stick is untouched as fallback. Done = Rohan boots the new stick, overlay/subtitles are right at 4K24, Jellyfin still signed in. Not yet booted. SSH host key will change (`ssh-keygen -R 10.0.10.146`).
+- [ ] **8.9 Decide with Rohan.** *2026-11-22: Rohan rejected the Dune app outright ("UI is horrible, I am not using that"), so CoreELEC/Kodi is the path and the open issues above must be fixed, not routed around.* CoreELEC only, Dune hand-off (§7) only, or both (CoreELEC for movies, Dune app as
       a switch-back). Done = decision recorded here and §7 closed or reopened.
 - [ ] **8.10 Back to Android.** Remove the stick and power-cycle (or "reboot to emmc" from the power menu). The guide has no
       explicit revert text, so this is unconfirmed until tried. Done = Android and the Dune app come up with the stick out.
@@ -250,3 +261,21 @@ his "scene-jump" picks and his own scene descriptions), `rewatch` page "Scenes" 
 - [ ] **9.5 Design the page** from what 9.4 teaches (grouping by mood? random scene? description length?). Done = layout agreed with Rohan before any code.
 - [ ] **9.6 Kodi add-on.** Home-screen entry, the page, play-and-stop, "I ain't dead" state while it seeks. Done = on the box, one remote press from home plays a scene to its end and returns.
 - [ ] **9.7 One-line add.** "Add <scene> from <film>" runs 9.2 and appends to 9.1. Done = a new scene appears on the page without Rohan editing a file.
+
+## 10. Mark scene — capture button for MODAK (opened 2026-11-20)
+**Goal:** while watching a film, Rohan taps to mark scene start/end (or a song) so MODAK (`~/repos/modak`) gets real boundaries.
+Android first. Do not disturb the swipe-seek / quality-pill work (`SPEC_swipe_seek_and_quality_pill.md`).
+**Tap model (Rohan, 2026-11-20):** one tap on the Mark button enters *marking mode*; timeline and controls then stay visible
+(no auto-hide). In marking mode: tap = start, next tap = end, repeat. Long press = song. Marks show on the timeline like editor markers.
+**Defaults I assumed (he did not object; change if wrong):** a start with no end when marking mode is left or the film closes becomes a
+`point`; a tap within 3 s of the previous one is ignored as a double-tap; the sync URL is edited inside the Marks sheet (no new pref).
+**Status 2026-11-21:** code is committed and pushed on branch `scene-marks` (cut from `upstream-3.1`), released as GitHub release `v3.1.0-30000170` (APK `moonfin-beta-3.1.0-30000170.apk`, for Obtainium). `flutter analyze` clean, store tests pass. 10.2–10.5 are not ticked until they run on the phone.
+- [x] **10.1 Mark model + durable queue.** `lib/playback/scene_marks/`. JSON file in app documents, atomic write. Done = unit test: add marks,
+      re-open the store, all are still there; a corrupt/partial write does not drop earlier marks.
+- [ ] **10.2 Marking mode in the player.** Mark button in the controls row; mode keeps controls visible; tap start/end; long press song;
+      haptic + toast "Start 1:03:30" / "End 1:08:10"; skippable one-line note. Done = on the phone, marks in both orders saved with right item id/position.
+- [ ] **10.3 Timeline markers.** Ticks for point/song, shaded range for start–end, on the seek bar. Done = marks visible on the bar at the right place; pending start shown differently.
+- [ ] **10.4 Export marks.** "Export marks" saves `marks.json` via the system save dialog. Done = file on phone storage, array of the spec'd objects.
+- [ ] **10.5 Sync (optional target).** One configurable URL, empty by default; POST /marks with JSON array; retries when connectivity returns; never deletes a mark.
+      Done = with URL empty nothing is sent; with a test URL, queued marks arrive after airplane mode is turned off.
+- [ ] **10.6 End-to-end on the phone.** Done = open a film, start+end tap, airplane mode on, kill the app, reopen: marks in exported marks.json. (Needs Rohan's phone; build via flutterdev/.37.)
