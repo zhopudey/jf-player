@@ -236,6 +236,7 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       a switch-back). Done = decision recorded here and §7 closed or reopened.
 - [ ] **8.10 Back to Android.** Remove the stick and power-cycle (or "reboot to emmc" from the power menu). The guide has no
       explicit revert text, so this is unconfirmed until tried. Done = Android and the Dune app come up with the stick out.
+**HARD CONSTRAINT (Rohan, 2026-11-22): the Apple TV's HDMI-CEC chain must never change.** Any Apple TV remote button powers the whole system on and mom gets Zee Marathi with minimum fuss. So: no CEC changes on the Denon/TV/Apple TV, no CEC used as a CoreELEC remote path, and re-check the Apple TV one-button start after any box/Denon/HA change. Open check: Kodi's libcec on the box is at defaults (CEC adapter registered) and may send active-source/standby; to be reviewed with Rohan before the 21.2 stick goes into the living room.
 **Risks noted:** the bootloader is locked and verified, so no eMMC install, USB boot only. Android 14 firmware would change
 the picture (do not update). A CoreELEC-then-Android round trip can leave the LED glitching (guide).
 
