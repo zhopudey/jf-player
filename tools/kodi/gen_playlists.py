@@ -24,7 +24,7 @@ def rpc(method, params):
     r.add_header("Authorization", "Basic " + tok)
     return json.load(urllib.request.urlopen(r, timeout=30))["result"]
 
-LIB = re.compile(r"^(movies|tv)-(.+)$")
+LIB = re.compile(r"^(movies|tv)-(.+)$", re.I)
 KINDS = {"movies": ("movies", "VideoLibrary.GetMovies", "movies"),
          "tv": ("tvshows", "VideoLibrary.GetTVShows", "tvshows")}
 
@@ -45,7 +45,7 @@ for kind, (ptype, method, key) in KINDS.items():
     for it in items:
         for t in it.get("tag", []):
             m = LIB.match(t)
-            if m and m.group(1) == kind:
+            if m and m.group(1).lower() == kind:
                 langs[t].append(it)
     for tag, its in sorted(langs.items()):
         lang = LIB.match(tag).group(2).title()
