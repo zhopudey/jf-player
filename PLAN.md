@@ -240,7 +240,7 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       - [ ] f. Home screen: rows Continue Watching, Next Up, Recently Added, one per language; language -> genres -> poster wall. Skin route open (keep Arctic Zephyr and rearrange / Arctic Fuse / custom). Done = Rohan finds any film in <=3 clicks.
       - [ ] g. Scene-marks row, hidden while empty (marking takes weeks; blocks nothing).
       - [ ] h. Open: idle art screensaver (Rohan undecided).
-      - [ ] i. Housekeeping: Kea reservation for `.124` (MAC `50:41:1c:cd:eb:44`) still to add by Rohan; HA Kodi entities already point at `.124`; `.146` is the other (off) stick. IR `remote.conf` fix still unapplied (see handover below).
+      - [ ] i. Housekeeping: Kea reservation for `.124` (MAC `50:41:1c:cd:eb:44`) done 2026-11-23 (in opnsense, hostname coreelec); HA Kodi entities already point at `.124`; `.146` is the other (off) stick. IR `remote.conf` fix still unapplied (see handover below).
 - [ ] **8.9 Decide with Rohan.** *2026-11-22: Rohan rejected the Dune app outright ("UI is horrible, I am not using that"), so CoreELEC/Kodi is the path and the open issues above must be fixed, not routed around.* CoreELEC only, Dune hand-off (§7) only, or both (CoreELEC for movies, Dune app as
       a switch-back). Done = decision recorded here and §7 closed or reopened.
 - [ ] **8.10 Back to Android.** Remove the stick and power-cycle (or "reboot to emmc" from the power menu). The guide has no

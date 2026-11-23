@@ -20,6 +20,9 @@ import '../../../util/fullscreen_helper.dart';
 import '../../widgets/playback/seek_icons.dart';
 
 import '../../../playback/html_video_backend.dart';
+import '../../../playback/scene_marks/scene_mark.dart';
+import '../../../playback/scene_marks/scene_mark_store.dart';
+import 'scene_marking_ui.dart';
 import '../../../playback/media_kit_player_backend.dart';
 import '../../../playback/playback_lifecycle_handler.dart';
 import '../../../playback/playback_profile_diagnostics.dart';
@@ -124,6 +127,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   bool _controlsVisible = true;
   Timer? _hideTimer;
+  // --- Mark scene (PLAN §10) ---
+  bool _markingMode = false;
+  SceneMarkStore? _markStore;
+  SceneMark? _pendingStart;
+  DateTime? _lastMarkTapAt;
   bool _displayPlaying = false;
   Timer? _displayPlayingDebounce;
   Timer? _endsAtTicker;
@@ -951,6 +959,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
     _cancelTvTemporarySpeedHold();
     _hideTimer?.cancel();
+    _markStore?.removeListener(_onMarksChanged);
+    unawaited(_finishPendingMark());
     _displayPlayingDebounce?.cancel();
     _endsAtTicker?.cancel();
     _scrubSeekDebounceTimer?.cancel();
@@ -2504,8 +2514,128 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     });
   }
 
+  // ---- Mark scene (PLAN §10) ----
+  void _markToast(String text, {SceneMark? noteFor}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(text),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height - 110,
+          left: 16,
+          right: 16,
+        ),
+        action: noteFor == null || _markStore == null
+            ? null
+            : SnackBarAction(
+                label: 'Note',
+                onPressed: () =>
+                    showSceneNoteDialog(context, _markStore!, noteFor),
+              ),
+      ),
+    );
+  }
+
+  void _onMarksChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _toggleMarkingMode() async {
+    if (_markingMode) {
+      await _finishPendingMark();
+      _markStore?.removeListener(_onMarksChanged);
+      setState(() => _markingMode = false);
+      _markToast('Marking off');
+      _scheduleHide();
+      return;
+    }
+    final store = _markStore ??= await SceneMarkStore.instance();
+    if (!mounted) return;
+    store.addListener(_onMarksChanged);
+    setState(() => _markingMode = true);
+    _hideTimer?.cancel();
+    _showControls();
+    _markToast('Marking on: tap MARK START');
+  }
+
+  /// A start that never got an end becomes a lone "point" (never dropped).
+  Future<void> _finishPendingMark() async {
+    final pending = _pendingStart;
+    _pendingStart = null;
+    if (pending != null) {
+      await _markStore?.update(pending.id, type: SceneMarkType.point);
+    }
+  }
+
+  Future<void> _addMark({required bool song}) async {
+    final store = _markStore;
+    final item = _queue.currentItem;
+    if (store == null || item is! AggregatedItem) return;
+    final now = DateTime.now();
+    final last = _lastMarkTapAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 3)) {
+      _markToast('Ignored: tapped again within 3 s');
+      return;
+    }
+    _lastMarkTapAt = now;
+    HapticFeedback.mediumImpact();
+    final ms = _state.position.inMilliseconds;
+    final stamp = '${now.microsecondsSinceEpoch}';
+    // A pending start from another film cannot be paired.
+    if (_pendingStart != null && _pendingStart!.itemId != item.id) {
+      await _finishPendingMark();
+    }
+    SceneMarkType type;
+    String sceneId = stamp;
+    if (song) {
+      type = SceneMarkType.song;
+    } else if (_pendingStart != null) {
+      type = SceneMarkType.end;
+      sceneId = _pendingStart!.sceneId;
+    } else {
+      type = SceneMarkType.start;
+    }
+    final mark = SceneMark(
+      id: '$stamp-${item.id}',
+      sceneId: sceneId,
+      itemId: item.id,
+      title: item.name,
+      year: item.productionYear,
+      imdbId: item.imdbId,
+      tmdbId: item.tmdbId,
+      positionMs: ms,
+      type: type,
+      createdAt: now,
+    );
+    if (type == SceneMarkType.start) _pendingStart = mark;
+    if (type == SceneMarkType.end) _pendingStart = null;
+    await store.add(mark);
+    final label = switch (type) {
+      SceneMarkType.start => 'Start',
+      SceneMarkType.end => 'End',
+      _ => 'Song',
+    };
+    _markToast(
+      'Mark ${formatMarkTime(ms)} · $label saved'
+      '${type == SceneMarkType.start ? ' — tap again for the end' : ''}',
+      noteFor: mark,
+    );
+  }
+
+  void _openMarksSheet() {
+    final store = _markStore;
+    final item = _queue.currentItem;
+    if (store == null || item is! AggregatedItem) return;
+    showSceneMarksSheet(context, store, item.id);
+  }
+
   void _scheduleHide() {
     _hideTimer?.cancel();
+    if (_markingMode) return; // marking mode keeps timeline + buttons visible
     final hideDelay = PlatformDetection.useMobileUi
         ? const Duration(seconds: 8)
         : const Duration(seconds: 5);
@@ -2594,6 +2724,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       return;
     }
     if (_controlsVisible) {
+      if (_markingMode) return;
       _hideTimer?.cancel();
       setState(() => _controlsVisible = false);
     } else {
@@ -3323,6 +3454,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           return;
         }
         if (_dismissTopOverlayRouteIfAny()) {
+          return;
+        }
+        if (_markingMode) {
+          unawaited(_toggleMarkingMode());
           return;
         }
         if (_controlsVisible) {
@@ -4128,6 +4263,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (_markingMode) _buildSceneMarkBar(),
             _buildSeekbar(),
             const SizedBox(height: AppSpacing.spaceXs),
             _buildSecondaryControlsRow(),
@@ -4165,6 +4301,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSceneMarkBar() {
+    return SceneMarkBar(
+      expectingEnd: _pendingStart != null,
+      onTap: () => unawaited(_addMark(song: false)),
+      onLongPress: () => unawaited(_addMark(song: true)),
+      onOpenSheet: _openMarksSheet,
+      onExit: () => unawaited(_toggleMarkingMode()),
+      pendingSync: _markStore?.pendingCount ?? 0,
     );
   }
 
@@ -4280,7 +4427,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       },
                       child: ExcludeFocus(
                         excluding: PlatformDetection.isTV,
-                        child: SliderTheme(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                        SliderTheme(
                           data: SliderThemeData(
                             trackHeight: 4,
                             thumbShape: const RoundSliderThumbShape(
@@ -4337,6 +4487,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                               _scheduleHide();
                             },
                           ),
+                        ),
+                            if (_markStore != null && _queue.currentItem is AggregatedItem)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: SceneMarkTimelinePainter(
+                                      marks: _markStore!.forItem(
+                                        (_queue.currentItem as AggregatedItem).id,
+                                      ),
+                                      durationMs: durationMs,
+                                      pendingStartMs: _pendingStart?.positionMs,
+                                      positionMs: positionMs,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
@@ -4764,6 +4931,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               extent: secondaryExtent,
               iconSize: secondaryIconSize,
               tooltip: l10n.playerTooltipVolume,
+            ),
+          if (PlatformDetection.isMobile)
+            _controlButton(
+              _markingMode ? Icons.flag_rounded : Icons.outlined_flag_rounded,
+              onPressed: () => unawaited(_toggleMarkingMode()),
+              size: secondaryIconSize,
+              extent: secondaryExtent,
+              iconColor: _markingMode ? Colors.amber : Colors.white,
+              tooltip: _markingMode ? 'Leave marking mode' : 'Mark scene',
             ),
           _buildBitrateButton(
             extent: secondaryExtent,
