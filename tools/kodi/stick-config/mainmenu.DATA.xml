@@ -1,0 +1,73 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<shortcuts>
+    <shortcut>
+        <label>Recently Added</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>recent</defaultID>
+        <icon>special://skin/extras/icons/recentlyadded.png</icon>
+        <action>ActivateWindow(Videos,RecentlyAddedMovies,return)</action>
+    </shortcut>
+    <shortcut>
+        <label>English</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>m_english</defaultID>
+        <icon>special://skin/extras/icons/film.png</icon>
+        <action>ActivateWindow(Videos,special://profile/playlists/video/movies-english.xsp,return)</action>
+    </shortcut>
+    <shortcut>
+        <label>Hindi</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>m_hindi</defaultID>
+        <icon>special://skin/extras/icons/film.png</icon>
+        <action>ActivateWindow(Videos,special://profile/playlists/video/movies-hindi.xsp,return)</action>
+    </shortcut>
+    <shortcut>
+        <label>Animated</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>m_animated</defaultID>
+        <icon>special://skin/extras/icons/film.png</icon>
+        <action>ActivateWindow(Videos,special://profile/playlists/video/movies-animated.xsp,return)</action>
+    </shortcut>
+    <shortcut>
+        <label>Others</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>m_others</defaultID>
+        <icon>special://skin/extras/icons/film.png</icon>
+        <action>ActivateWindow(Videos,special://profile/playlists/video/movies-others.xsp,return)</action>
+    </shortcut>
+    <shortcut>
+        <label>Genres</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>genres</defaultID>
+        <icon>special://skin/extras/icons/genre.png</icon>
+        <action>ActivateWindow(Videos,special://profile/playlists/video/,return)</action>
+    </shortcut>
+    <shortcut>
+        <label>TV Shows</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>tvshows</defaultID>
+        <icon>special://skin/extras/icons/tv.png</icon>
+        <action>ActivateWindow(Videos,TVShowTitles,return)</action>
+    </shortcut>
+    <shortcut>
+        <label>Add-ons</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>programs</defaultID>
+        <icon>special://skin/extras/icons/addons.png</icon>
+        <action>ActivateWindow(Programs)</action>
+    </shortcut>
+    <shortcut>
+        <label>Settings</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>settings</defaultID>
+        <icon>special://skin/extras/icons/settings.png</icon>
+        <action>ActivateWindow(Settings)</action>
+    </shortcut>
+    <shortcut>
+        <label>Power</label>
+        <label2>Common Shortcut</label2>
+        <defaultID>power</defaultID>
+        <icon>special://skin/extras/icons/power.png</icon>
+        <action>ActivateWindow(shutdownmenu)</action>
+    </shortcut>
+</shortcuts>

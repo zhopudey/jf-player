@@ -1,0 +1,12 @@
+<keymap>
+  <FullscreenVideo>
+    <remote>
+      <back>Stop</back>
+    </remote>
+    <keyboard>
+      <backspace>Stop</backspace>
+      <escape>Stop</escape>
+      <browser_back>Stop</browser_back>
+    </keyboard>
+  </FullscreenVideo>
+</keymap>
