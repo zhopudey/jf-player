@@ -242,8 +242,27 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       - [ ] h. Open: idle art screensaver (Rohan undecided).
       - [x] l. Back stops full-screen video (2026-11-24): keymap `/storage/.kodi/userdata/keymaps/back-stops-video.xml` on `.124` (remote back, backspace, esc, browser_back -> Stop; OSD still closes first). Not yet tested on a film; undo = delete file + `kodi-send --action=reloadkeymaps`. All stick config files are copied to `tools/kodi/stick-config/` with restore notes.
       - [~] m. CEC, Apple TV constraint (2026-11-25). Finding: the Kodi box follows the TV: `standby_pc_on_tv_standby` was Suspend (TV off -> box sleeps; TV on -> box wakes via `wakeup_cec_auto_power`), `activate_source=1`, `standby_tv_on_pc_standby=1`. **Temporary, Rohan OK'd:** set `standby_pc_on_tv_standby` = 36028 (Ignore) in `/storage/.kodi/userdata/peripheral_data/cec_CEC_Adapter.xml` (backup `.orig-2026-11-25`) so the box stays awake for the working day. **REVERT TONIGHT** (Kodi stopped, restore the `.orig`, start Kodi). Tonight's test, Rohan present: the real risk is the other direction, TV powered on by an Apple TV remote button -> does the Kodi box wake and grab the HDMI input? Then re-run mom's one-button start. Goal stated by Rohan: TV/AVR switch off when unused (power), any Apple TV remote button brings it all back on and selects the Apple TV. Not changed: Denon, TV, Apple TV, HA scripts.
-      **Backlog parked 2026-11-25 (planning only, nothing here is built yet; order is Rohan's call):**
-      - [ ] n. TONIGHT with Rohan present: (1) revert the temporary CEC setting (m); (2) remote Power key off-path: does it put the Kodi box to sleep AND turn the TV + AVR off? Fallback until confirmed: switch to Apple TV and power off from there; (3) TV powered on by an Apple TV remote button: the Kodi box must not grab the HDMI input; (4) mom's one-button start still lands on Zee Marathi. Done = all four observed.
+      ## PART A: POWER AND INPUTS (critical, tested before any Part B work). Rohan's rule 2026-11-25: wake, sleep and input switching must be thoroughly tested.
+      **Method:** Rohan does every physical action; I watch (read-only) the Kodi box log (CEC lines), the Denon signal and power sensors and HA entities, and the TV state, and write each result into the table. One test at a time, Rohan says go. Stop at the first failure, put the box back to its baseline, and ask. No settings on the Denon, TV, Apple TV or HA scripts change during testing; if a fix would need one, ask first. Only the Kodi box's own settings may change, and each change is backed up.
+      **A0. Baseline before testing:** revert the temporary stay-awake setting (m: restore `cec_CEC_Adapter.xml.orig-2026-11-25`, Kodi stopped while restoring); snapshot Kodi's CEC settings, the Denon input and volume, and the TV input; confirm mom's flow works once before touching anything.
+      **Pass rule:** every row below reads "as expected", and mom's flow (A1) passes again at the end.
+      | # | Starting state | Action | Expected | Result |
+      |---|---|---|---|---|
+      | A1 | everything off, Kodi box asleep | any Apple TV remote button | TV + AVR on, input = Apple TV, Zee Marathi; the Kodi box does NOT take the input | [ ] |
+      | A1b | everything off, Kodi box awake | same | same | [ ] |
+      | A2 | everything off | Kodi remote Power | TV + AVR on, input = Kodi box (Denon HDMI 3), Kodi box awake | [ ] |
+      | A3 | Kodi active (idle on Home) | Kodi remote Power | Kodi box sleeps, TV + AVR off | [ ] |
+      | A4 | Kodi playing a film | Kodi remote Power | playback stops (resume saved), box sleeps, TV + AVR off | [ ] |
+      | A5 | Apple TV active, Kodi box awake in the background | Apple TV "turn off" | TV + AVR off; Kodi box follows or stays awake (record which); nothing turns back on by itself | [ ] |
+      | A6 | Apple TV active, Kodi box asleep | Apple TV "turn off" | TV + AVR off; nothing wakes | [ ] |
+      | A7 | Kodi active | switch to Apple TV (its remote) | input switches, Kodi pauses or stops playback, Apple TV works | [ ] |
+      | A8 | Apple TV active | switch to Kodi (HA CoreELEC button / Denon input 3) | input switches, Kodi shows | [ ] |
+      | A9 | Kodi box asleep, TV off | TV powered on by TV's own remote | record what wakes and which input is selected | [ ] |
+      | A10 | everything on, idle | wait for the TV's own auto power-off (if configured) | TV + AVR off, nothing wakes | [ ] |
+      | A11 | Kodi box mid-boot or restarting | Apple TV button | still works; the box does not take the input when it finishes starting | [ ] |
+      | A12 | A1 repeated at the very end | | mom's flow still passes | [ ] |
+      **Open questions for Rohan:** is the TV's own auto power-off enabled (A10), and does he want Kodi's Power key to also stop the AVR when the Apple TV is the active input (A5-adjacent)? Report format: this table plus a line in vaikuntha-core for any Kodi-box change.
+      ## PART B: UI/UX (less critical, order is Rohan's call, nothing here is built yet)
       - [ ] o. Home rows: Continue Watching, Next Up (Zephyr widgets).
       - [ ] p. Genres: proper language -> genre second level; TV language tiles.
       - [ ] q. Default audio/subs: (1) set preferred subtitle language to English (now `original`; audio is already `mediadefault`); (2) optional Kodi service script that picks tracks at playback start from Jellyfin's stream data (language/default/forced) + the library tag, no database writes. Files stay untouched (seeding). Rejected: cron writing Kodi's `MyVideos131.db` (Kodi + the Jellyfin add-on write it; lock/corruption risk) and NFO edits (Kodi ignores NFO stream details).
