@@ -253,7 +253,7 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       | A2 | everything off | Kodi remote Power | TV + AVR on, input = Kodi box (Denon HDMI 3), Kodi box awake | [ ] |
       | A3 | Kodi active (idle on Home) | Kodi remote Power | Kodi box sleeps, TV + AVR off | [ ] |
       | A4 | Kodi playing a film | Kodi remote Power | playback stops (resume saved), box sleeps, TV + AVR off | [ ] |
-      | A4b | Apple TV active, Kodi box awake in the background | Kodi remote Power | per Rohan 2026-11-25: Kodi's Power acts ONLY when Kodi is the active input; with Apple TV active it must NOT switch the TV or AVR off (the box may sleep, the TV/AVR stay on). Likely to fail with the current CEC defaults (box standby sends standby to the TV): record it and ask before fixing | [ ] |
+      | A4b | Apple TV active, Kodi box awake in the background | Kodi remote Power | LOW PRIORITY (Rohan 2026-11-25: he won't use the Kodi remote while on Apple TV; run it last, record only, no fix needed unless it hits the family). Wish: Kodi's Power acts ONLY when Kodi is the active input; with Apple TV active it must NOT switch the TV or AVR off (the box may sleep, the TV/AVR stay on). Likely to fail with the current CEC defaults (box standby sends standby to the TV): record it and ask before fixing | [ ] |
       | A5 | Apple TV active, Kodi box awake in the background | Apple TV "turn off" | TV + AVR off; Kodi box follows or stays awake (record which); nothing turns back on by itself | [ ] |
       | A6 | Apple TV active, Kodi box asleep | Apple TV "turn off" | TV + AVR off; nothing wakes | [ ] |
       | A7 | Kodi active | switch to Apple TV (its remote) | input switches, Kodi pauses or stops playback, Apple TV works | [ ] |
