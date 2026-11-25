@@ -250,6 +250,7 @@ floor for Dolby Vision. 22.0 "Piers" is NO-branch prerelease only, so not used.
       | # | Starting state | Action | Expected | Result |
       |---|---|---|---|---|
       | A1 | everything off, Kodi box asleep | any Apple TV remote button | TV + AVR on, input = Apple TV, Zee Marathi; the Kodi box does NOT take the input | PARTIAL 2026-11-25 08:10 (box not cleanly asleep: pinged, Kodi not running): AVR on, TV on, TV came up on CoreELEC first, moved to Apple TV after a few seconds by itself. Not yet zero-fuss; cause unknown (TV last-input vs box claiming). Open: did it land on Zee Marathi, what the screen showed meanwhile. Re-run with the box properly asleep. |
+      | A1c | everything off, Kodi box properly asleep (re-run of A1) | any Apple TV remote button | as A1 | PASS 2026-11-25 08:12 (Rohan: "Kodi box powers on as well, still all izz well"); the box wakes with the TV by design (`wakeup_cec_auto_power`); unrecorded: whether the TV flashed CoreELEC first | 
       | A1b | everything off, Kodi box awake | same | same | [ ] |
       | A2 | everything off | Kodi remote Power | TV + AVR on, input = Kodi box (Denon HDMI 3), Kodi box awake | [ ] |
       | A3 | Kodi active (idle on Home) | Kodi remote Power | Kodi box sleeps, TV + AVR off | [ ] |
