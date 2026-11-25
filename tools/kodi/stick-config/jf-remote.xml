@@ -1,0 +1,16 @@
+<!-- jf-player remote contract (PLAN 8.11 s). Homatics IR remote via remote.conf:
+     mic 0x46 -> KEY_SEARCH (browser_search), CC 0x58 -> F13, bookmark 0x74 -> F14 (unbound),
+     TV 0x32 -> F15 (unbound), i 0x29 -> KEY_I (Kodi default Info). -->
+<keymap>
+  <global>
+    <keyboard>
+      <browser_search>RunScript(script.globalsearch,movies=true&amp;tvshows=true&amp;episodes=true)</browser_search>
+    </keyboard>
+  </global>
+  <FullscreenVideo>
+    <keyboard>
+      <home>RunScript(special://profile/keymaps/jf_stop_home.py)</home>
+      <f13>ActivateWindow(osdsubtitlesettings)</f13>
+    </keyboard>
+  </FullscreenVideo>
+</keymap>
