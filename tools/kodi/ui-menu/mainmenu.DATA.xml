@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shortcuts>
+	<shortcut>
+		<label>Movies</label>
+		<label2 />
+		<icon>special://skin/extras/icons/DefaultMovies.png</icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-all.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>Animated</label>
+		<label2 />
+		<icon>special://skin/extras/icons/DefaultMovies.png</icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/animated-all.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>TV</label>
+		<label2 />
+		<icon>special://skin/extras/icons/DefaultTVShows.png</icon>
+		<thumb />
+		<action>ActivateWindow(Videos,videodb://tvshows/titles/,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>Find</label>
+		<label2 />
+		<icon>special://skin/extras/icons/DefaultAddonsSearch.png</icon>
+		<thumb />
+		<action>RunScript(script.globalsearch,movies=true&amp;tvshows=true&amp;episodes=true)</action>
+	</shortcut>
+	<shortcut>
+		<label>More</label>
+		<label2 />
+		<icon>special://skin/extras/icons/DefaultAddonService.png</icon>
+		<thumb />
+		<action>ActivateWindow(Settings)</action>
+	</shortcut>
+</shortcuts>

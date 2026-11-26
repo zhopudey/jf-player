@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shortcuts>
+	<shortcut>
+		<label>English</label>
+		<label2 />
+		<icon></icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-english.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>Hindi</label>
+		<label2 />
+		<icon></icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-hindi.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>Indian</label>
+		<label2 />
+		<icon></icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-indian.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>Foreign</label>
+		<label2 />
+		<icon></icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-foreign.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>Under 2 hours</label>
+		<label2 />
+		<icon></icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-under-2h.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>Added this month</label>
+		<label2 />
+		<icon></icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-new.xsp,return)</action>
+	</shortcut>
+	<shortcut>
+		<label>10 random picks</label>
+		<label2 />
+		<icon></icon>
+		<thumb />
+		<action>ActivateWindow(Videos,special://profile/playlists/video/ui/movies-random.xsp,return)</action>
+	</shortcut>
+</shortcuts>
