@@ -94,10 +94,10 @@ for _ in range(2):   # after the poster image (drawn on top of it), in item + fo
 blk = "".join(parts) + blk[pos:]
 s = s[:i] + blk + s[j:]
 save("Includes_Widgets.xml", s)
-# Variables.xml: genre folders of our UI playlists get SiLVO's own genre images (extras/moviegenres/default, all TMDb names)
+# Variables.xml: genre folders of our UI playlists get SiLVO's own genre images (extras/moviegenres/colored, all TMDb names; Rohan 2026-11-26: b&w felt weird)
 s = load("Variables.xml")
 GEN = ('\t\t<value condition="ListItem.IsFolder + !ListItem.IsParentFolder + String.Contains(Container.FolderPath,playlists/video/ui/) + '
-       '!ListItem.IsCollection">$INFO[ListItem.Label,special://skin/extras/moviegenres/default/,.jpg]</value>\n')
+       '!ListItem.IsCollection">$INFO[ListItem.Label,special://skin/extras/moviegenres/colored/,.jpg]</value>\n')
 for var in ("PosterThumbVar", "PosterThumb"):
     a = f'<variable name="{var}">\n'
     if a in s:

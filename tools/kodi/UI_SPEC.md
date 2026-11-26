@@ -37,10 +37,10 @@ is only touched after Rohan's go.
 | # | Screen | What it does | What it shows |
 |---|---|---|---|
 | S1 | **Home** | tasks 1 + entry to 2-4 | Menu: **Movies · Animated · TV · Find · More**. Above it, two poster rows that follow the focused item (SiLVO allows 2): Movies = Continue watching + Top rated unwatched; Animated = Continue watching + Random picks; TV = Next up + Recently added shows. Down from Movies = the filter strip (S2). |
-| S2 | **Movies** | task 2, then 4 | The picking rows are the Home rows (S1). The filter strip is the Movies submenu on Home: **English · Hindi · Indian · Foreign · Under 2 hours · Added this month · 10 random picks**. Movies itself / a language = genre tiles (SiLVO genre images, same wall) -> film wall. |
+| S2 | **Movies** | task 2, then 4 | The picking rows are the Home rows (S1). The filter strip is the Movies submenu on Home: **English · Hindi · Indian · Foreign · Under 2 hours · Added this month · 10 random picks**. Movies itself / a language = genre tiles (SiLVO colour genre images, same wall) -> film wall. |
 | S3 | **Wall** (InfoWall 51) | browse | Poster grid on the left, info panel on the right (rules above). Number keys jump A-Z. **Left from the first column = side menu, the ONE place for refining any wall:** sort (rating, year, added, A-Z), Unwatched only, Filter (genre, actor, director, rating, year). Same menu on every wall. |
 | S4 | **Info** (i key / long OK) | details | Same block order as the panel, larger; Play/Resume first, then cast -> their films, trailer. |
-| S5 | **TV** | tasks 1, 4 | Shows wall (S3) -> seasons wall (S3) -> episodes in SiLVO's MyFlix view (509): plot + runtime top-left, landscape thumbs row, the same flag row. One wall for all 22 shows. |
+| S5 | **TV** | tasks 1, 4 | Shows wall (S3) -> straight to ALL episodes (no season step; Kodi `videolibrary.flattentvshows` = always) in SiLVO's MyFlix view (509): plot + runtime top-left, landscape thumbs row, the same flag row; the row runs from S1 straight into S2 (Rohan 2026-11-26, Netflix-style). Show tiles have no flag row: flags are per file, a show has none. |
 | S6 | **Find** | task 3 | Global Search: keyboard opens straight away (mic key lands here too; Kore types from the phone); results = posters by Movies / TV / Episodes with plot + flag row. "Surprise me" = the "10 random picks" strip entry. |
 | S7 | **Playback** | task 5 | Right tracks automatically (trackpicker). CC key opens one Audio + Subtitles panel. Minimal OSD: title, time, progress. |
 | S8 | **More** | rare | Add-ons, Settings, Power. Nothing else. |
@@ -77,14 +77,14 @@ states cleared so the default applies.
 | u1 Language groups | S2 | counts: English 249, Hindi 106, Indian 60, Foreign 23 (Kabali has no language yet) | done (lab); Rohan to sanity-check counts |
 | p Movies strip + genre tiles | S2 | Home -> language -> genre -> film = 3 presses of OK | done (lab) |
 | Animated wall | S2 | opens on the wall | done (lab) |
-| InfoWall everywhere | S3, S5 | movies, genres, shows, seasons open as the wall | done (lab) |
-| Episode layout | S5 | MyFlix view | done (lab) |
+| InfoWall everywhere | S3, S5 | movies, genres, shows open as the wall | done (lab) |
+| Episode layout | S5 | MyFlix view, seasons flattened, S1 flows into S2 | done (lab) |
 | v Find | S6 | keyword gives poster results | done (lab); mic + Kore on the TV |
 | Language playlists stay current | S2 | a new film lands in its language wall without me | **open**: run `gen_ui_playlists.py` next to the 5-min tracks push |
 | s Remote contract | all | every key in the table works on the TV | built on box earlier, untested |
 | q0/q2 Tracks + CC panel | S7 | wrong default fixed in 2 presses | trackpicker built, untested |
 | g Scene-marks row | S1 | row shows when marks exist | later |
-| Review + deploy | all | Rohan OKs the shots; box updated once (skin auto-update off, files + playlists + menu copied, view states cleared, ReloadSkin, no restart) | waiting for Rohan |
+| Review + deploy | all | Rohan OKs the shots; box updated once (skin auto-update off, files + playlists + menu copied, view states cleared, `flattentvshows`=2, `showparentdiritems`=off, `showallitems`=off, ReloadSkin, no restart) | waiting for Rohan |
 
 **Known rough edges (my calls, say if any bother you):** genre-tile screens have an empty right panel on a
 black background; Find results show titles under posters and no rating badge (it is Global Search's own
