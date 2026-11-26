@@ -12,6 +12,7 @@ from xml.sax.saxutils import escape
 
 p = argparse.ArgumentParser()
 p.add_argument("--host", default="10.0.10.124")
+p.add_argument("--port", type=int, default=8080)
 p.add_argument("--user", default="kodi")
 p.add_argument("--out", required=True)
 p.add_argument("--min", type=int, default=3, help="skip language x genre combos with fewer titles")
@@ -19,7 +20,7 @@ a = p.parse_args()
 
 def rpc(method, params):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    r = urllib.request.Request(f"http://{a.host}:8080/jsonrpc", body, {"Content-Type": "application/json"})
+    r = urllib.request.Request(f"http://{a.host}:{a.port}/jsonrpc", body, {"Content-Type": "application/json"})
     tok = base64.b64encode(f"{a.user}:{os.environ['KODI_PASS']}".encode()).decode()
     r.add_header("Authorization", "Basic " + tok)
     return json.load(urllib.request.urlopen(r, timeout=30))["result"]
