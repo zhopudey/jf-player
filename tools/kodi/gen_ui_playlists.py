@@ -66,7 +66,7 @@ files = {
     "movies-under-2h.xsp": xsp("Under 2 hours", [("time", "lessthan", ["02:00:00"]), ("playcount", "is", ["0"]), NOT_ANIM], order=("rating", "descending")),
     "movies-new.xsp": xsp("Added this month", [("dateadded", "inthelast", ["30 days"]), NOT_ANIM], order=("dateadded", "descending")),
     "movies-random.xsp": xsp("10 random picks", [("playcount", "is", ["0"]), NOT_ANIM], order=("random", "ascending"), limit=10),
-    "animated-all.xsp": xsp("Animated", [("tag", "is", [ANIM])], group_by="genres"),
+    "animated-all.xsp": xsp("Animated", [("tag", "is", [ANIM])]),   # 84 films: straight to the wall
     "animated-continue.xsp": xsp("Animated: continue", [("inprogress", "true", []), ("tag", "is", [ANIM])], order=("lastplayed", "descending")),
     "animated-random.xsp": xsp("Animated: random picks", [("playcount", "is", ["0"]), ("tag", "is", [ANIM])], order=("random", "ascending"), limit=15),
 }
