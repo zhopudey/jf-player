@@ -78,7 +78,7 @@ assert len(ms) == 2
 for m in reversed(ms):
     s = s[:m.end()] + m.group(2) + "<include>JFRatingBadge</include>\n" + s[m.end():]
 # genre folders use the same wall (SiLVO genre images, see Variables.xml below)
-s = once(s, "[Container.Content(tvshows) | Container.Content(movies)]", "[Container.Content(tvshows) | Container.Content(movies) | Container.Content(genres) | Container.Content(seasons)]")
+s = once(s, "[Container.Content(tvshows) | Container.Content(movies)]", "[Container.Content(tvshows) | Container.Content(movies) | Container.Content(genres)]")
 save("View_51_InfoWall.xml", s)
 
 # Home rows (PortraitArt widgets): same badge
@@ -105,7 +105,7 @@ for var in ("PosterThumbVar", "PosterThumb"):
 save("Variables.xml", s)
 # MyVideoNav.xml: InfoWall (51) first, so every new video folder opens as the wall; MyFlix (509) next for episodes
 s = load("MyVideoNav.xml")
-s = once(s, "<views>50,51,", "<views>51,509,50,")   # 509 MyFlix catches episodes (51 is hidden there)
+s = once(s, "<views>50,51,", "<views>51,509,50,")   # order of the view cycle; defaults per content type are Kodi viewstates (see UI_SPEC deploy)
 s = s.replace(",509,591,", ",591,", 1)
 save("MyVideoNav.xml", s)
 print("patched 5 files into", out)
