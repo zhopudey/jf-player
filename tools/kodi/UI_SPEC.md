@@ -49,6 +49,8 @@ is only touched after Rohan's go.
 **Animated** = S2 with the same rows and strip, animated films only (84).
 
 ## Remote contract (fixed; item s)
+Settled 2026-11-26 (Rohan: none of the suggestions "feel right"): spare keys stay unbound. A key gets a
+meaning only when a real, repeated need shows up while using the box. Retire this when one does.
 | Key | Everywhere | In playback |
 |---|---|---|
 | OK | open / play | pause |
@@ -58,7 +60,7 @@ is only touched after Rohan's go.
 | mic | Find (S6) | — |
 | CC | — | audio + subs panel |
 | 0-9 | A-Z jump on walls | — |
-| colour keys, CH +/-, bookmark, TV | **open (Rohan)** | |
+| colour keys, CH +/-, bookmark, TV | unbound (do nothing) | unbound |
 
 ## Build list (one list; tick here and in PLAN)
 | Item | Screens | Done = | Status |
@@ -84,5 +86,4 @@ is only touched after Rohan's go.
 naming the screen they change.
 
 ## Open, for Rohan (big-picture only)
-1. Colour keys / CH +/- / bookmark / TV: what they do (or leave unbound).
-2. Idle: screensaver or straight to sleep (S9).
+1. Idle: screensaver or straight to sleep (S9).
