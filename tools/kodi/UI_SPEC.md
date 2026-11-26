@@ -38,7 +38,7 @@ is only touched after Rohan's go.
 |---|---|---|---|
 | S1 | **Home** | tasks 1 + entry to 2-4 | Menu: **Movies · Animated · TV · Find · More**. Under it, poster rows: Continue Watching, Next Up, Recently Added. Rows hide when empty. |
 | S2 | **Movies** | task 2, then 4 | Opens on picking rows: Top rated unwatched, Under 2 hours, Added this month, 10 random (reshuffled daily). Under the rows, a filter strip: **All · English · Hindi · Indian · Foreign**, then genre. Every row / filter opens S3. |
-| S3 | **Wall** (InfoWall 51) | browse | Poster grid on the left, info panel on the right (rules above). Number keys jump A-Z. |
+| S3 | **Wall** (InfoWall 51) | browse | Poster grid on the left, info panel on the right (rules above). Number keys jump A-Z. **Left from the first column = side menu, the ONE place for refining any wall:** sort (rating, year, added, A-Z), Unwatched only, Filter (genre, actor, director, rating, year). Same menu on every wall. |
 | S4 | **Info** (i key / long OK) | details | Same block order as the panel, larger; Play/Resume first, then cast -> their films, trailer. |
 | S5 | **TV** | tasks 1, 4 | Shows wall (S3) -> seasons wall (S3) -> episodes: landscape thumbs + the same panel. Language groups as in S2 if the counts justify them (22 shows today: probably just one wall). |
 | S6 | **Find** | task 3 | Search box opens straight away (mic key lands here too); results on a wall (S3). Typing from the phone via Kore. "Surprise me" = a random unwatched film opened in S4. |
@@ -82,7 +82,7 @@ meaning only when a real, repeated need shows up while using the box. Retire thi
 | g Scene-marks row | S1 | row shows when marks exist | later |
 | Review + deploy | all | Rohan OKs the screenshots; box updated once | |
 
-**Out of the picture (not screens):** w collections, x decade/runtime filters. Re-enter only by
+**Out of the picture (not screens):** w collections. x decade/runtime filters now live in the S3 side menu. Re-enter only by
 naming the screen they change.
 
 ## Open, for Rohan (big-picture only)
