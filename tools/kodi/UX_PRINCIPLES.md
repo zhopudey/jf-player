@@ -18,7 +18,7 @@ Apple TV is the reference. Test every screen with the real remote, on the Hisens
 
 ## How we apply them (the process, from the Sanchalak lessons)
 - Write the task list (5 lines at most) before any screen. The navigation is those lines and nothing else.
-- Build one screen, then use it for a day before building the second.
+- Build the whole spec (`UI_SPEC.md`) in kodi-lab, review it once with screenshots, deploy once, then live with it before changing it.
 - Every new feature names the screen it extends and what it removes or merges. If it needs a new tab, rewrite the task list first.
-- Customise an existing skin (Arctic Zephyr), never write one from scratch.
+- Customise an existing skin (Aeon Nox SiLVO since 2026-11-26), never write one from scratch.
 - Schedule a deletion pass: remove whatever goes unused.
